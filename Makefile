@@ -38,18 +38,49 @@ load: ## Load dataset into HDFS
 	bash scripts/load_to_hdfs.sh
 
 job-top: ## Run Job 1 (top resources)
-	bash scripts/run_job.sh top_resources
+	set -o pipefail
+	bash scripts/run_job.sh top_resources 2>&1 | tee data/output/top_resources.log
+	set +o pipefail
 	sort -k2 -n -r data/output/top_resources.raw.txt | head -20 > data/output/top_resources.txt
 
 job-status: ## Run Job 2 (status + bytes)
-	bash scripts/run_job.sh status_bytes
+	set -o pipefail
+	bash scripts/run_job.sh status_bytes 2>&1 | tee data/output/status_bytes.log
 	sort -k1 -n data/output/status_bytes.raw.txt > data/output/status_bytes.txt
 
 results: ## Print job output tables
-	echo "TODO: results"
+	@echo "=== Job 1: Top 20 Requested Resources ==="
+	cat data/output/top_resources.txt
+	echo ""
+	echo "=== Job 2: HTTP Status Distribution ==="
+	printf "%-8s %-12s %s\n" "Status" "Requests" "Bytes"
+	cat data/output/status_bytes.txt
+	echo ""
+	echo "=== Key Counters ==="
+	echo "Job 1 (top_resources):"
+	if [ -f data/output/top_resources.log ]; then
+		grep -E "(Map input records|Combine input records|Reduce output records|malformed_line)" \
+			data/output/top_resources.log | sed 's/^[[:space:]]*/  /'
+	else
+		echo "  (run make job-top first)"
+	fi
+	echo "Job 2 (status_bytes):"
+	if [ -f data/output/status_bytes.log ]; then
+		grep -E "(Map input records|Combine input records|Reduce output records|malformed_line)" \
+			data/output/status_bytes.log | sed 's/^[[:space:]]*/  /'
+	else
+		echo "  (run make job-status first)"
+	fi
 
 demo: ## Run full pipeline end-to-end
-	echo "TODO: demo"
+	set -e
+	$(MAKE) up
+	$(MAKE) verify
+	$(MAKE) download
+	$(MAKE) load
+	$(MAKE) job-top
+	$(MAKE) job-status
+	$(MAKE) results
 
 clean: ## Remove outputs, dataset, and Docker resources
 	find data/output -mindepth 1 ! -name '.gitkeep' -delete
