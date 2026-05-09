@@ -88,4 +88,4 @@ clean: ## Remove outputs, dataset, and Docker resources
 	docker compose down -v --remove-orphans 2>/dev/null || true
 
 test: ## Run unit tests for mappers and reducers
-	echo "TODO: test"
+	cd tests && python3 -m unittest -v
