@@ -42,7 +42,8 @@ job-top: ## Run Job 1 (top resources)
 	sort -k2 -n -r data/output/top_resources.raw.txt | head -20 > data/output/top_resources.txt
 
 job-status: ## Run Job 2 (status + bytes)
-	echo "TODO: job-status"
+	bash scripts/run_job.sh status_bytes
+	sort -k1 -n data/output/status_bytes.raw.txt > data/output/status_bytes.txt
 
 results: ## Print job output tables
 	echo "TODO: results"
