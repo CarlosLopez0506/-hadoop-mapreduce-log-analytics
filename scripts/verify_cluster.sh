@@ -43,7 +43,7 @@ fi
 # 5. mapreduce_smoke — pi 2 5 proves end-to-end MapReduce works; combiner is sound (sum is associative+commutative)
 echo "  Running MapReduce smoke test (pi 2 5) — up to 180s..."
 smoke_exit=0
-timeout 180 docker compose exec -T resourcemanager bash -lc \
+timeout 180 docker compose exec -T resourcemanager bash -c \
     'yarn jar $(ls /opt/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-examples-*.jar | head -1) pi 2 5' \
     2>&1 | tee /tmp/nasa_smoke_pi.txt || smoke_exit=$?
 if [ "$smoke_exit" -eq 0 ] && grep -q 'Estimated value of Pi' /tmp/nasa_smoke_pi.txt; then
