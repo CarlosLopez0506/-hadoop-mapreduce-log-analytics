@@ -1,0 +1,12 @@
+# Dataset
+data/*
+!data/.gitkeep
+!data/output/
+# Job outputs
+data/output/*
+!data/output/.gitkeep
+# Python
+__pycache__/
+*.pyc
+# OS
+.DS_Store
