@@ -35,7 +35,7 @@ download: ## Download and validate the NASA dataset
 	bash scripts/download_dataset.sh
 
 load: ## Load dataset into HDFS
-	echo "TODO: load"
+	bash scripts/load_to_hdfs.sh
 
 job-top: ## Run Job 1 (top resources)
 	echo "TODO: job-top"
