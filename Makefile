@@ -38,7 +38,8 @@ load: ## Load dataset into HDFS
 	bash scripts/load_to_hdfs.sh
 
 job-top: ## Run Job 1 (top resources)
-	echo "TODO: job-top"
+	bash scripts/run_job.sh top_resources
+	sort -k2 -n -r data/output/top_resources.raw.txt | head -20 > data/output/top_resources.txt
 
 job-status: ## Run Job 2 (status + bytes)
 	echo "TODO: job-status"
