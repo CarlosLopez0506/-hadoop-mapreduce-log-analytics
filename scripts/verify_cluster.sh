@@ -45,7 +45,8 @@ echo "  Running MapReduce smoke test (pi 2 5) — up to 180s..."
 smoke_exit=0
 timeout 180 docker compose exec -T resourcemanager bash -c \
     'yarn jar $(ls /opt/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-examples-*.jar | head -1) pi 2 5' \
-    2>&1 | tee /tmp/nasa_smoke_pi.txt || smoke_exit=$?
+    </dev/null >/tmp/nasa_smoke_pi.txt 2>&1 || smoke_exit=$?
+cat /tmp/nasa_smoke_pi.txt
 if [ "$smoke_exit" -eq 0 ] && grep -q 'Estimated value of Pi' /tmp/nasa_smoke_pi.txt; then
     grep 'Estimated value of Pi' /tmp/nasa_smoke_pi.txt
     docker compose exec -T resourcemanager hdfs dfs -rm -r -f '/user/root/QuasiMonteCarlo_*' 2>/dev/null || true
