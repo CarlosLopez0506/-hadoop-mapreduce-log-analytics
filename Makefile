@@ -8,13 +8,28 @@ help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*##"; printf "%-15s %s\n", "Target", "Description"; printf "%-15s %s\n", "------", "-----------"} /^[a-zA-Z_-]+:.*?##/ { printf "%-15s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 up: ## Start the Hadoop cluster (5 containers)
-	echo "TODO: up"
+	docker compose up -d --build
+	echo "Waiting for all containers to be healthy (up to 180s)..."
+	elapsed=0
+	while [ $$elapsed -lt 180 ]; do
+		count=$$(docker inspect --format '{{.State.Health.Status}}' \
+			nasa-namenode nasa-datanode nasa-resourcemanager nasa-nodemanager nasa-historyserver \
+			2>/dev/null | grep -c '^healthy$$' || true)
+		if [ "$$count" -eq 5 ]; then
+			echo "All 5 containers healthy."
+			exit 0
+		fi
+		sleep 5
+		elapsed=$$((elapsed + 5))
+	done
+	echo "Timeout: not all containers healthy after 180s." >&2
+	exit 1
 
 down: ## Stop the Hadoop cluster
-	echo "TODO: down"
+	docker compose down
 
 verify: ## Verify cluster health and run smoke test
-	echo "TODO: verify"
+	bash scripts/verify_cluster.sh
 
 download: ## Download and validate the NASA dataset
 	echo "TODO: download"

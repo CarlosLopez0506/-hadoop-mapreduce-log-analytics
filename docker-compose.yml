@@ -1,0 +1,118 @@
+services:
+  namenode:
+    build: .
+    image: mapreduce-nasa:3.4.1
+    container_name: nasa-namenode
+    hostname: namenode
+    command: ["hdfs", "namenode"]
+    environment:
+      ENSURE_NAMENODE_DIR: /tmp/hadoop-root/dfs/name
+    env_file: ./hadoop.env
+    ports:
+      - "9870:9870"
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9870/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - hadoop_net
+
+  datanode:
+    build: .
+    image: mapreduce-nasa:3.4.1
+    container_name: nasa-datanode
+    hostname: datanode
+    command: ["hdfs", "datanode"]
+    env_file: ./hadoop.env
+    ports:
+      - "9864:9864"
+    depends_on:
+      namenode:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9864/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - hadoop_net
+
+  resourcemanager:
+    build: .
+    image: mapreduce-nasa:3.4.1
+    container_name: nasa-resourcemanager
+    hostname: resourcemanager
+    command: ["yarn", "resourcemanager"]
+    env_file: ./hadoop.env
+    ports:
+      - "8088:8088"
+    volumes:
+      - ./data:/data
+      - ./jobs:/opt/jobs:ro
+    depends_on:
+      datanode:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8088/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - hadoop_net
+
+  nodemanager:
+    build: .
+    image: mapreduce-nasa:3.4.1
+    container_name: nasa-nodemanager
+    hostname: nodemanager
+    command: ["yarn", "nodemanager"]
+    env_file: ./hadoop.env
+    ports:
+      - "8042:8042"
+    depends_on:
+      resourcemanager:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8042/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - hadoop_net
+
+  historyserver:
+    build: .
+    image: mapreduce-nasa:3.4.1
+    container_name: nasa-historyserver
+    hostname: historyserver
+    command: ["mapred", "historyserver"]
+    env_file: ./hadoop.env
+    ports:
+      - "19888:19888"
+    depends_on:
+      resourcemanager:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:19888/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - hadoop_net
+
+networks:
+  hadoop_net:
+    driver: bridge
