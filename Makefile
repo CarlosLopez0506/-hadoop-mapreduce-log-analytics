@@ -32,7 +32,7 @@ verify: ## Verify cluster health and run smoke test
 	bash scripts/verify_cluster.sh
 
 download: ## Download and validate the NASA dataset
-	echo "TODO: download"
+	bash scripts/download_dataset.sh
 
 load: ## Load dataset into HDFS
 	echo "TODO: load"
