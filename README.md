@@ -10,6 +10,40 @@ make demo    # download dataset, load to HDFS, run both jobs, print results
 make down    # stop and remove containers
 ```
 
+## Run on AWS EC2 (Ansible)
+
+Deploys the full cluster on an EC2 m5.xlarge via SSM — no SSH required.
+
+**One-time local setup:**
+
+```bash
+pip install boto3 botocore ansible
+ansible-galaxy collection install -r ansible/requirements.yml
+# Install Session Manager Plugin:
+# https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html
+```
+
+**Every session:**
+
+```bash
+export AWS_ACCESS_KEY_ID=...
+export AWS_SECRET_ACCESS_KEY=...
+export AWS_DEFAULT_REGION=us-east-1
+export REPO_URL=https://github.com/CarlosLopez0506/-hadoop-mapreduce-log-analytics
+
+ansible-playbook ansible/revive.yml
+```
+
+This single command: launches the EC2 instance, clones the repo, builds the Docker image, starts the 7-container Hadoop cluster, downloads the dataset, loads it into HDFS, runs all 3 MapReduce jobs, and deploys the dashboard.
+
+**When done:**
+
+```bash
+ansible-playbook ansible/revive.yml --tags teardown
+```
+
+Cost: ~$0.13 for a full run (~40 min at $0.192/hr for m5.xlarge).
+
 ## What this is
 
 Two MapReduce streaming jobs over the NASA Kennedy Space Center HTTP access log for July 1995 (1.9 M requests, 205 MB uncompressed). Job 1 counts hits per URL and uses a combiner to demonstrate the map → combine → shuffle → reduce flow. Job 2 groups requests by HTTP status code and sums bytes transferred per group. The entire pipeline runs inside five Docker containers and collapses to one command: `make demo`.
