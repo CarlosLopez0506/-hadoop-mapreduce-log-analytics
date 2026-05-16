@@ -2,7 +2,7 @@ SHELL := /bin/bash
 .ONESHELL:
 .DEFAULT_GOAL := help
 
-.PHONY: help up down verify download load job-top job-status results demo clean test report
+.PHONY: help up down verify download load job-top job-status job-hourly results demo clean test report
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*##"; printf "%-15s %s\n", "Target", "Description"; printf "%-15s %s\n", "------", "-----------"} /^[a-zA-Z_-]+:.*?##/ { printf "%-15s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -46,6 +46,12 @@ job-status: ## Run Job 2 (status + bytes)
 	bash scripts/run_job.sh status_bytes 2>&1 | tee data/output/status_bytes.log
 	sort -k1 -n data/output/status_bytes.raw.txt > data/output/status_bytes.txt
 
+job-hourly: ## Run Job 3 (hourly traffic distribution)
+	set -o pipefail
+	bash scripts/run_job.sh hourly_traffic 2>&1 | tee data/output/hourly_traffic.log
+	set +o pipefail
+	sort -k1 -n data/output/hourly_traffic.raw.txt > data/output/hourly_traffic.txt
+
 results: ## Print job output tables
 	@echo "=== Job 1: Top 20 Requested Resources ==="
 	cat data/output/top_resources.txt
@@ -53,6 +59,11 @@ results: ## Print job output tables
 	echo "=== Job 2: HTTP Status Distribution ==="
 	printf "%-8s %-12s %s\n" "Status" "Requests" "Bytes"
 	cat data/output/status_bytes.txt
+	echo ""
+	echo ""
+	echo "=== Job 3: Hourly Traffic Distribution ==="
+	printf "%-6s %s\n" "Hour" "Requests"
+	cat data/output/hourly_traffic.txt
 	echo ""
 	echo "=== Key Counters ==="
 	echo "Job 1 (top_resources):"
@@ -78,6 +89,7 @@ demo: ## Run full pipeline end-to-end
 	$(MAKE) load
 	$(MAKE) job-top
 	$(MAKE) job-status
+	$(MAKE) job-hourly
 	$(MAKE) results
 
 clean: ## Remove outputs, dataset, and Docker resources

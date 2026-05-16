@@ -13,10 +13,12 @@ def load_module(rel_path):
     return mod
 
 
-top_mapper  = load_module('jobs/top_resources/mapper.py')
-top_reducer = load_module('jobs/top_resources/reducer.py')
-sb_mapper   = load_module('jobs/status_bytes/mapper.py')
-sb_reducer  = load_module('jobs/status_bytes/reducer.py')
+top_mapper    = load_module('jobs/top_resources/mapper.py')
+top_reducer   = load_module('jobs/top_resources/reducer.py')
+sb_mapper     = load_module('jobs/status_bytes/mapper.py')
+sb_reducer    = load_module('jobs/status_bytes/reducer.py')
+ht_mapper     = load_module('jobs/hourly_traffic/mapper.py')
+ht_combiner   = load_module('jobs/hourly_traffic/combiner.py')
 
 
 # Real-world samples from the NASA Kennedy Space Center Jul95 log
@@ -97,6 +99,32 @@ class TestStatusBytesReducer(unittest.TestCase):
         out = run_module(sb_reducer, lines)
         self.assertIn('200\t2\t2020', out)
         self.assertIn('304\t1\t0', out)
+
+
+class TestHourlyTrafficMapper(unittest.TestCase):
+
+    def test_hourly_traffic_mapper_extracts_hour_correctly(self):
+        line = '133.43.96.45 - - [01/Jul/1995:14:23:45 -0400] "GET /images/NASA-logosmall.gif HTTP/1.0" 200 786'
+        out = run_module(ht_mapper, [line])
+        self.assertEqual(out, ['14\t1'])
+
+    def test_hourly_traffic_mapper_skips_malformed(self):
+        _in, _out, _err = sys.stdin, sys.stdout, sys.stderr
+        try:
+            sys.stdin  = io.StringIO(MALFORMED + '\n')
+            sys.stdout = io.StringIO()
+            sys.stderr = io.StringIO()
+            ht_mapper.main()
+            stdout_val = sys.stdout.getvalue().strip()
+            stderr_val = sys.stderr.getvalue()
+        finally:
+            sys.stdin, sys.stdout, sys.stderr = _in, _out, _err
+        self.assertEqual(stdout_val, '')
+        self.assertIn('counter', stderr_val)
+
+    def test_hourly_traffic_combiner_sums_same_hour(self):
+        out = run_module(ht_combiner, ['09\t3', '09\t5'])
+        self.assertEqual(out, ['09\t8'])
 
 
 if __name__ == '__main__':
