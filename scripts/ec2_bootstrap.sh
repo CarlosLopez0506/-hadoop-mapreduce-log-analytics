@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 yum update -y
-yum install -y docker git
+yum install -y docker git make
 systemctl start docker
 systemctl enable docker
 usermod -aG docker ec2-user

@@ -31,7 +31,7 @@
     repo_url: "{{ lookup('env', 'REPO_URL') }}"
     instance_type: m5.xlarge
     sg_id: sg-0ce597dbefd715675
-    iam_profile: LabRole
+    iam_profile: rolEC2
     project_tag: nasa-mapreduce
 
   tasks:
@@ -76,7 +76,9 @@
         groups: cluster
         ansible_connection: community.aws.aws_ssm
         ansible_aws_ssm_region: "{{ region }}"
-        ansible_aws_ssm_transfer_method: piped
+        ansible_aws_ssm_transfer_method: s3
+        ansible_aws_ssm_bucket_name: nasa-demo-deploy-023579852268
+        ansible_aws_ssm_timeout: 3600
         ec2_ip: "{{ ec2.instances[0].public_ip_address }}"
         repo_url: "{{ repo_url }}"
 
@@ -93,6 +95,8 @@
 - name: Deploy NASA MapReduce
   hosts: cluster
   gather_facts: false
+  become: yes
+  become_user: ec2-user
 
   tasks:
     - name: Wait for SSM connection
@@ -115,31 +119,46 @@
       retries: 24
       delay: 5
 
+    - name: Fix project dir ownership
+      become_user: root
+      ansible.builtin.shell: |
+        if [ -d /home/ec2-user/ml-big-data ]; then
+          chown -R ec2-user:ec2-user /home/ec2-user/ml-big-data
+        fi
+
     - name: Clone or update project repo
       ansible.builtin.shell: |
+        set -e
+        BRANCH=aws-deploy
         if [ -d /home/ec2-user/ml-big-data/.git ]; then
-          git -C /home/ec2-user/ml-big-data pull --ff-only
+          cd /home/ec2-user/ml-big-data
+          git fetch origin
+          git checkout "$BRANCH" 2>/dev/null || git checkout -b "$BRANCH" "origin/$BRANCH"
+          git reset --hard "origin/$BRANCH"
         else
-          git clone {{ repo_url }} /home/ec2-user/ml-big-data
+          git clone -b "$BRANCH" {{ repo_url }} /home/ec2-user/ml-big-data
         fi
       register: git_result
-      changed_when: "'Already up to date' not in git_result.stdout"
+      changed_when: true
 
     - name: Build Docker image
-      ansible.builtin.shell: |
-        cd /home/ec2-user/ml-big-data
-        docker build -t mapreduce-nasa:3.4.1 .
+      ansible.builtin.shell: docker build -t mapreduce-nasa:3.4.1 .
+      args:
+        chdir: /home/ec2-user/ml-big-data
+      async: 1800
+      poll: 30
       register: build_result
       changed_when: true
 
     - name: Start Hadoop cluster (2 datanodes + 2 nodemanagers)
-      ansible.builtin.shell: |
-        cd /home/ec2-user/ml-big-data
-        docker compose up -d --scale datanode=2 --scale nodemanager=2
+      ansible.builtin.shell: docker compose up -d --scale datanode=2 --scale nodemanager=2
+      args:
+        chdir: /home/ec2-user/ml-big-data
+      async: 300
+      poll: 10
 
     - name: Wait for all 7 containers to be healthy
       ansible.builtin.shell: |
-        cd /home/ec2-user/ml-big-data
         count=$(docker compose ps --format json \
           | python3 -c "
         import sys, json
@@ -148,64 +167,82 @@
         ")
         echo "$count"
         [ "$count" -ge 7 ]
+      args:
+        chdir: /home/ec2-user/ml-big-data
       register: health
       until: health.rc == 0
       retries: 48
       delay: 10
 
     - name: Download NASA dataset
-      ansible.builtin.shell: |
-        cd /home/ec2-user/ml-big-data
-        make download
+      ansible.builtin.shell: bash scripts/download_dataset.sh
+      args:
+        chdir: /home/ec2-user/ml-big-data
+      async: 600
+      poll: 15
       register: download
       changed_when: "'Already downloaded' not in download.stdout"
 
     - name: Load dataset into HDFS
-      ansible.builtin.shell: |
-        cd /home/ec2-user/ml-big-data
-        make load
+      ansible.builtin.shell: bash scripts/load_to_hdfs.sh
+      args:
+        chdir: /home/ec2-user/ml-big-data
+      async: 600
+      poll: 15
 
     - name: Run Job 1 — top_resources
-      ansible.builtin.shell: |
-        cd /home/ec2-user/ml-big-data
-        make job-top
+      ansible.builtin.shell: bash scripts/run_job.sh top_resources 2>&1 | tee data/output/top_resources.log
+      args:
+        chdir: /home/ec2-user/ml-big-data
+      async: 600
+      poll: 15
 
     - name: Run Job 2 — status_bytes
-      ansible.builtin.shell: |
-        cd /home/ec2-user/ml-big-data
-        make job-status
+      ansible.builtin.shell: bash scripts/run_job.sh status_bytes 2>&1 | tee data/output/status_bytes.log
+      args:
+        chdir: /home/ec2-user/ml-big-data
+      async: 600
+      poll: 15
 
     - name: Run Job 3 — hourly_traffic
+      ansible.builtin.shell: bash scripts/run_job.sh hourly_traffic 2>&1 | tee data/output/hourly_traffic.log
+      args:
+        chdir: /home/ec2-user/ml-big-data
+      async: 600
+      poll: 15
+
+    - name: Sort job outputs
       ansible.builtin.shell: |
-        cd /home/ec2-user/ml-big-data
-        make job-hourly
+        sort -k2 -n -r data/output/top_resources.raw.txt | head -20 > data/output/top_resources.txt
+        sort -k1 -n data/output/status_bytes.raw.txt > data/output/status_bytes.txt
+        sort -k1 -n data/output/hourly_traffic.raw.txt > data/output/hourly_traffic.txt
+      args:
+        chdir: /home/ec2-user/ml-big-data
 
     - name: Install and configure Apache
+      become_user: root
       ansible.builtin.shell: |
         yum install -y httpd
         systemctl start httpd
         systemctl enable httpd
         mkdir -p /etc/httpd/conf.d
-        cat > /etc/httpd/conf.d/hadoop-proxy.conf << 'APACHEEOF'
-        LoadModule proxy_module modules/mod_proxy.so
-        LoadModule proxy_http_module modules/mod_proxy_http.so
-        LoadModule headers_module modules/mod_headers.so
-        Header always set Access-Control-Allow-Origin "*"
-        ProxyPass /yarn/ http://localhost:8088/
-        ProxyPassReverse /yarn/ http://localhost:8088/
-        ProxyPass /hdfs/ http://localhost:9870/
-        ProxyPassReverse /hdfs/ http://localhost:9870/
-        APACHEEOF
+        printf 'Header always set Access-Control-Allow-Origin "*"\nProxyPass /yarn/ http://localhost:8088/\nProxyPassReverse /yarn/ http://localhost:8088/\nProxyPass /hdfs/ http://localhost:9870/\nProxyPassReverse /hdfs/ http://localhost:9870/\n' > /etc/httpd/conf.d/hadoop-proxy.conf
         systemctl restart httpd
+      async: 300
+      poll: 10
 
-    - name: Generate results JSON and deploy dashboard
+    - name: Generate results JSON
+      ansible.builtin.shell: bash scripts/results_to_json.sh
+      args:
+        chdir: /home/ec2-user/ml-big-data
+
+    - name: Deploy dashboard to /var/www/html
+      become_user: root
       ansible.builtin.shell: |
-        cd /home/ec2-user/ml-big-data
-        bash scripts/results_to_json.sh
         mkdir -p /var/www/html/api/results /var/www/html/api/logs
-        cp dashboard/index.html /var/www/html/index.html
-        cp dashboard/api/results/*.json /var/www/html/api/results/
-        echo '' > /var/www/html/api/logs/current.txt
+        cp /home/ec2-user/ml-big-data/dashboard/index.html /var/www/html/index.html
+        cp /home/ec2-user/ml-big-data/dashboard/api/results/*.json /var/www/html/api/results/
+        cat /home/ec2-user/ml-big-data/data/output/*.log > /var/www/html/api/logs/current.txt
 
     - name: Done — open these URLs
       ansible.builtin.debug:
