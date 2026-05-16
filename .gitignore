@@ -15,3 +15,5 @@ nasa-demo.pem
 .ec2_instance_id
 .ec2_ip
 .ec2_key
+# Dashboard generated files (real job results)
+dashboard/api/

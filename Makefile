@@ -2,7 +2,7 @@ SHELL := /bin/bash
 .ONESHELL:
 .DEFAULT_GOAL := help
 
-.PHONY: help up down verify download load job-top job-status job-hourly results demo clean test report ec2-up ec2-deploy ec2-demo ec2-down
+.PHONY: help up down verify download load job-top job-status job-hourly results demo clean test report ec2-up ec2-deploy ec2-demo ec2-down ec2-dashboard
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*##"; printf "%-15s %s\n", "Target", "Description"; printf "%-15s %s\n", "------", "-----------"} /^[a-zA-Z_-]+:.*?##/ { printf "%-15s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -164,3 +164,56 @@ ec2-demo: ## Run make demo on the EC2 instance
 ec2-down: ## Terminate the EC2 instance
 	aws ec2 terminate-instances --instance-ids $$(cat .ec2_instance_id)
 	@echo "Instance $$(cat .ec2_instance_id) terminating."
+
+ec2-dashboard: ## Deploy dashboard to EC2 via SSM
+	mkdir -p dashboard/api/results dashboard/api/logs
+	bash scripts/results_to_json.sh
+	@echo "Deploying dashboard to EC2..."
+	@# Step 1: Install Apache
+	@CMD_ID=$$(AWS_DEFAULT_REGION=us-east-1 aws ssm send-command \
+	  --instance-ids i-003b293d36c02e0cd \
+	  --document-name "AWS-RunShellScript" \
+	  --timeout-seconds 120 \
+	  --parameters "commands=[\"yum install -y httpd && systemctl start httpd && systemctl enable httpd && echo APACHE_DONE\"]" \
+	  --query 'Command.CommandId' --output text); \
+	until [ "$$(AWS_DEFAULT_REGION=us-east-1 aws ssm get-command-invocation --command-id $$CMD_ID --instance-id i-003b293d36c02e0cd --query 'Status' --output text 2>/dev/null)" != "InProgress" ]; do sleep 5; done; \
+	AWS_DEFAULT_REGION=us-east-1 aws ssm get-command-invocation --command-id $$CMD_ID --instance-id i-003b293d36c02e0cd --query 'StandardOutputContent' --output text
+	@# Step 2: Create dirs
+	@CMD_ID=$$(AWS_DEFAULT_REGION=us-east-1 aws ssm send-command \
+	  --instance-ids i-003b293d36c02e0cd \
+	  --document-name "AWS-RunShellScript" \
+	  --timeout-seconds 30 \
+	  --parameters "commands=[\"mkdir -p /var/www/html/api/results /var/www/html/api/logs && echo DIRS_DONE\"]" \
+	  --query 'Command.CommandId' --output text); \
+	until [ "$$(AWS_DEFAULT_REGION=us-east-1 aws ssm get-command-invocation --command-id $$CMD_ID --instance-id i-003b293d36c02e0cd --query 'Status' --output text 2>/dev/null)" != "InProgress" ]; do sleep 5; done
+	@# Step 3: Upload index.html via base64
+	@B64=$$(base64 -w 0 dashboard/index.html); \
+	CMD_ID=$$(AWS_DEFAULT_REGION=us-east-1 aws ssm send-command \
+	  --instance-ids i-003b293d36c02e0cd \
+	  --document-name "AWS-RunShellScript" \
+	  --timeout-seconds 30 \
+	  --parameters "commands=[\"echo '$$B64' | base64 -d > /var/www/html/index.html\"]" \
+	  --query 'Command.CommandId' --output text); \
+	until [ "$$(AWS_DEFAULT_REGION=us-east-1 aws ssm get-command-invocation --command-id $$CMD_ID --instance-id i-003b293d36c02e0cd --query 'Status' --output text 2>/dev/null)" != "InProgress" ]; do sleep 5; done; \
+	echo "index.html uploaded"
+	@# Step 4: Upload JSON results
+	@for f in top_resources status_bytes hourly_traffic; do \
+	  B64=$$(base64 -w 0 dashboard/api/results/$$f.json); \
+	  CMD_ID=$$(AWS_DEFAULT_REGION=us-east-1 aws ssm send-command \
+	    --instance-ids i-003b293d36c02e0cd \
+	    --document-name "AWS-RunShellScript" \
+	    --timeout-seconds 30 \
+	    --parameters "commands=[\"echo '$$B64' | base64 -d > /var/www/html/api/results/$$f.json\"]" \
+	    --query 'Command.CommandId' --output text); \
+	  until [ "$$(AWS_DEFAULT_REGION=us-east-1 aws ssm get-command-invocation --command-id $$CMD_ID --instance-id i-003b293d36c02e0cd --query 'Status' --output text 2>/dev/null)" != "InProgress" ]; do sleep 5; done; \
+	  echo "$$f.json uploaded"; \
+	done
+	@# Step 5: Create empty logs file
+	@CMD_ID=$$(AWS_DEFAULT_REGION=us-east-1 aws ssm send-command \
+	  --instance-ids i-003b293d36c02e0cd \
+	  --document-name "AWS-RunShellScript" \
+	  --timeout-seconds 30 \
+	  --parameters "commands=[\"echo '' > /var/www/html/api/logs/current.txt\"]" \
+	  --query 'Command.CommandId' --output text); \
+	until [ "$$(AWS_DEFAULT_REGION=us-east-1 aws ssm get-command-invocation --command-id $$CMD_ID --instance-id i-003b293d36c02e0cd --query 'Status' --output text 2>/dev/null)" != "InProgress" ]; do sleep 5; done
+	@echo "Dashboard deployed to http://100.26.134.124/"

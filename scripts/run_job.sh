@@ -42,4 +42,9 @@ echo "Merging output..."
 docker compose exec -T resourcemanager \
     hdfs dfs -getmerge "/user/root/output/$JOB_NAME" "/data/output/$JOB_NAME.raw.txt"
 
+# regenerate JSON for dashboard if script exists
+if [ -f scripts/results_to_json.sh ]; then
+    bash scripts/results_to_json.sh 2>/dev/null || true
+fi
+
 echo "Done: data/output/$JOB_NAME.raw.txt"

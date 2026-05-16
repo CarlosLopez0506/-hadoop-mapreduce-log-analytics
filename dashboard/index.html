@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NASA Access Log Analysis — UP AWS Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #FAFAF7;
+    --bg-soft:  #F2EFE6;
+    --bg-card:  #FFFFFF;
+    --ink:      #18181B;
+    --ink-2:    #44444A;
+    --ink-3:    #86868E;
+    --rule:     #E2DFD3;
+    --gold:     #B8924A;
+    --navy:     #1F2A44;
+    --teal:     #3D8B9C;
+    --code-bg:  #14161C;
+    --code-ink: #E7E9EE;
+  }
+
+  html { font-size: 16px; }
+  body {
+    font-family: 'Geist', sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    font-feature-settings: "ss01","cv11";
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Header ── */
+  .site-header {
+    height: 64px;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--rule);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 48px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header-brand {
+    font-family: 'Geist Mono', monospace;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.20em;
+    text-transform: uppercase;
+    color: var(--gold);
+  }
+  .header-meta {
+    font-family: 'Geist Mono', monospace;
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--ink-3);
+    letter-spacing: 0.08em;
+  }
+
+  /* ── Hero ── */
+  .hero {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 80px 48px 64px;
+  }
+  .eyebrow {
+    font-family: 'Geist Mono', monospace;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.20em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 20px;
+  }
+  .hero h1 {
+    font-size: clamp(48px, 6vw, 80px);
+    font-weight: 500;
+    line-height: 1.05;
+    color: var(--ink);
+    margin-bottom: 24px;
+    white-space: pre-line;
+  }
+  .hero-subtitle {
+    font-size: 20px;
+    font-weight: 400;
+    color: var(--ink-2);
+    line-height: 1.6;
+  }
+
+  /* ── Band ── */
+  .band {
+    background: var(--bg-soft);
+    padding: 48px;
+  }
+  .band-inner {
+    max-width: 960px;
+    margin: 0 auto;
+  }
+
+  /* ── Cards row ── */
+  .cards-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+  }
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+    padding: 28px 24px;
+  }
+  .card-label {
+    font-family: 'Geist Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 12px;
+  }
+  .card-number {
+    font-size: 36px;
+    font-weight: 700;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    margin-bottom: 8px;
+  }
+  .card-desc {
+    font-size: 13px;
+    color: var(--ink-3);
+    font-weight: 400;
+  }
+
+  /* ── Section wrapper ── */
+  .section {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 64px 48px;
+  }
+  .section-eyebrow {
+    font-family: 'Geist Mono', monospace;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.20em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 24px;
+  }
+
+  /* ── Jobs table ── */
+  .table-card {
+    background: var(--bg-card);
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  thead tr {
+    border-bottom: 1px solid var(--rule);
+  }
+  thead th {
+    padding: 14px 20px;
+    text-align: left;
+    font-family: 'Geist Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    background: var(--bg-soft);
+  }
+  tbody tr {
+    border-bottom: 1px solid var(--rule);
+    transition: background 0.15s;
+  }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--bg-soft); }
+  tbody td {
+    padding: 16px 20px;
+    font-size: 14px;
+    color: var(--ink-2);
+    vertical-align: middle;
+  }
+  .job-name {
+    font-family: 'Geist Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--navy);
+  }
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+  }
+  .badge-succeeded { background: #E8F9F0; color: #3CB97A; }
+  .badge-running   { background: #FDF4E7; color: #B8924A; }
+  .badge-failed    { background: #FDEAEA; color: #DC3545; }
+  .badge-pending   { background: #F0F0F0; color: var(--ink-3); }
+
+  .progress-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .progress-bar-outer {
+    flex: 1;
+    height: 6px;
+    background: var(--rule);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .progress-bar-inner {
+    height: 100%;
+    border-radius: 3px;
+    background: var(--navy);
+    transition: width 0.4s ease;
+  }
+  .progress-bar-inner.teal { background: var(--teal); }
+  .progress-pct {
+    font-family: 'Geist Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ink-3);
+    width: 36px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Tabs ── */
+  .tabs-header {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 0;
+  }
+  .tab-btn {
+    padding: 14px 24px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    cursor: pointer;
+    border: none;
+    background: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .tab-btn:hover { color: var(--ink-2); }
+  .tab-btn.active {
+    color: var(--navy);
+    border-bottom-color: var(--navy);
+  }
+  .tab-panel { display: none; padding: 28px 0 0; }
+  .tab-panel.active { display: block; }
+
+  /* ── Results tables ── */
+  .results-table { width: 100%; border-collapse: collapse; }
+  .results-table th {
+    text-align: left;
+    padding: 10px 16px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    border-bottom: 1px solid var(--rule);
+  }
+  .results-table td {
+    padding: 12px 16px;
+    font-size: 14px;
+    color: var(--ink-2);
+    border-bottom: 1px solid var(--rule);
+    vertical-align: middle;
+  }
+  .results-table tr:last-child td { border-bottom: none; }
+  .results-table tr:hover td { background: var(--bg-soft); }
+
+  .rank-cell {
+    font-family: 'Geist Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ink-3);
+    width: 40px;
+    font-variant-numeric: tabular-nums;
+  }
+  .path-cell {
+    font-family: 'Geist Mono', monospace;
+    font-size: 12px;
+    color: var(--navy);
+    word-break: break-all;
+    max-width: 400px;
+  }
+  .count-cell {
+    font-family: 'Geist Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+    width: 100px;
+  }
+  .bar-cell { width: 160px; padding-right: 24px; }
+  .inline-bar {
+    height: 8px;
+    border-radius: 4px;
+    background: var(--navy);
+    min-width: 2px;
+  }
+  .inline-bar.teal { background: var(--teal); }
+
+  /* Hourly chart */
+  .hourly-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .hourly-row:last-child { border-bottom: none; }
+  .hour-label {
+    font-family: 'Geist Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ink-3);
+    width: 32px;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .hourly-bar-wrap {
+    flex: 1;
+    height: 18px;
+    display: flex;
+    align-items: center;
+  }
+  .hourly-bar {
+    height: 14px;
+    border-radius: 3px;
+    background: var(--teal);
+    min-width: 2px;
+  }
+  .hourly-count {
+    font-family: 'Geist Mono', monospace;
+    font-size: 12px;
+    color: var(--ink-3);
+    width: 80px;
+    text-align: right;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .hourly-chart-wrap {
+    background: var(--bg-card);
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+    padding: 24px 28px;
+  }
+
+  /* Status badges in results */
+  .status-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 5px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .s2xx { background: #E8F9F0; color: #3CB97A; }
+  .s3xx { background: #FDF4E7; color: #B8924A; }
+  .s4xx { background: #E6F6F9; color: #3D8B9C; }
+  .s5xx { background: #FDEAEA; color: #DC3545; }
+  .s0xx { background: #F0F0F0; color: var(--ink-3); }
+
+  /* ── Logs ── */
+  .logs-box {
+    background: var(--code-bg);
+    border-radius: 12px;
+    padding: 32px;
+    max-height: 400px;
+    overflow-y: auto;
+    font-family: 'Geist Mono', monospace;
+    font-size: 13px;
+    color: var(--code-ink);
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .logs-box::-webkit-scrollbar { width: 6px; }
+  .logs-box::-webkit-scrollbar-track { background: transparent; }
+  .logs-box::-webkit-scrollbar-thumb { background: #2A2D36; border-radius: 3px; }
+
+  /* ── Footer ── */
+  footer {
+    border-top: 1px solid var(--rule);
+    padding: 28px 48px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .footer-inner {
+    max-width: 960px;
+    margin: 0 auto;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .footer-left, .footer-right {
+    font-family: 'Geist Mono', monospace;
+    font-size: 12px;
+    color: var(--ink-3);
+    font-weight: 400;
+    letter-spacing: 0.06em;
+  }
+
+  /* Loading / empty states */
+  .state-loading {
+    font-family: 'Geist Mono', monospace;
+    font-size: 13px;
+    color: var(--ink-3);
+    padding: 32px 0;
+    text-align: center;
+  }
+
+  @media (max-width: 720px) {
+    .cards-row { grid-template-columns: repeat(2, 1fr); }
+    .site-header { padding: 0 24px; }
+    .hero { padding: 48px 24px 40px; }
+    .band { padding: 32px 24px; }
+    .section { padding: 40px 24px; }
+    footer { padding: 24px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ══ Header ══ -->
+<header class="site-header">
+  <span class="header-brand">UP · AWS Lab</span>
+  <span class="header-meta">023579852268 · us-east-1</span>
+</header>
+
+<!-- ══ Hero ══ -->
+<section class="hero">
+  <p class="eyebrow">HADOOP · DOCKER · EC2</p>
+  <h1>NASA Access Log
+Analysis</h1>
+  <p class="hero-subtitle">1.9M HTTP requests · July 1995 · 3 MapReduce jobs · 2 DataNodes · 3 Reducers</p>
+</section>
+
+<!-- ══ Cluster Info Cards ══ -->
+<div class="band">
+  <div class="band-inner">
+    <div class="cards-row">
+      <div class="card">
+        <div class="card-label">DATANODES</div>
+        <div class="card-number" id="card-datanodes">—</div>
+        <div class="card-desc">Live DataNodes in cluster</div>
+      </div>
+      <div class="card">
+        <div class="card-label">REPLICATION</div>
+        <div class="card-number">2</div>
+        <div class="card-desc">HDFS replication factor</div>
+      </div>
+      <div class="card">
+        <div class="card-label">TOTAL REQUESTS</div>
+        <div class="card-number">1,891,715</div>
+        <div class="card-desc">HTTP log entries — Jul 1995</div>
+      </div>
+      <div class="card">
+        <div class="card-label">JOBS COMPLETED</div>
+        <div class="card-number" id="card-jobs-completed">—</div>
+        <div class="card-desc">YARN apps with SUCCEEDED status</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MapReduce Jobs ══ -->
+<div class="section">
+  <p class="section-eyebrow">MAPREDUCE JOBS</p>
+  <div class="table-card">
+    <div id="jobs-table-wrap">
+      <div class="state-loading">Fetching jobs from YARN…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Results Tabs ══ -->
+<div class="band">
+  <div class="band-inner">
+    <p class="section-eyebrow">ANALYSIS RESULTS</p>
+    <div class="table-card">
+      <div class="tabs-header">
+        <button class="tab-btn active" data-tab="top-resources">Top Resources</button>
+        <button class="tab-btn" data-tab="http-status">HTTP Status</button>
+        <button class="tab-btn" data-tab="hourly-traffic">Hourly Traffic</button>
+      </div>
+
+      <!-- Tab: Top Resources -->
+      <div class="tab-panel active" id="tab-top-resources" style="padding: 0 24px 24px;">
+        <div style="padding-top: 24px;">
+          <div id="top-resources-content"><div class="state-loading">Loading top_resources.json…</div></div>
+        </div>
+      </div>
+
+      <!-- Tab: HTTP Status -->
+      <div class="tab-panel" id="tab-http-status" style="padding: 0 24px 24px;">
+        <div style="padding-top: 24px;">
+          <div id="http-status-content"><div class="state-loading">Loading status_bytes.json…</div></div>
+        </div>
+      </div>
+
+      <!-- Tab: Hourly Traffic -->
+      <div class="tab-panel" id="tab-hourly-traffic" style="padding: 0 24px 24px;">
+        <div style="padding-top: 24px;">
+          <div id="hourly-traffic-content"><div class="state-loading">Loading hourly_traffic.json…</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Logs ══ -->
+<div class="section">
+  <p class="section-eyebrow">EXECUTION LOGS</p>
+  <div class="logs-box" id="logs-box">Waiting for logs…</div>
+</div>
+
+<!-- ══ Footer ══ -->
+<footer>
+  <div class="footer-inner">
+    <span class="footer-left">Universidad Panamericana · Cloud Computing</span>
+    <span class="footer-right">AWS EC2 · Docker · Hadoop 3.4.1 · Python 3</span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  'use strict';
+
+  const NAMENODE   = 'http://100.26.134.124:9870';
+  const YARN       = 'http://100.26.134.124:8088';
+  const FETCH_OPTS = { cache: 'no-store' };
+
+  // ── Utility ──────────────────────────────────────────────────────────────
+  function fmtNum(n) {
+    return Number(n).toLocaleString('en-US');
+  }
+
+  function fmtBytes(bytes) {
+    const b = Number(bytes);
+    if (b >= 1e9)  return (b / 1e9).toFixed(2) + ' GB';
+    if (b >= 1e6)  return (b / 1e6).toFixed(1) + ' MB';
+    if (b >= 1e3)  return (b / 1e3).toFixed(1) + ' KB';
+    return b + ' B';
+  }
+
+  function fmtDuration(ms) {
+    if (!ms || ms <= 0) return '—';
+    const s = Math.round(ms / 1000);
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    if (m === 0) return sec + 's';
+    return m + 'm ' + sec + 's';
+  }
+
+  function statusBadgeClass(code) {
+    const c = String(code);
+    if (c.startsWith('2')) return 's2xx';
+    if (c.startsWith('3')) return 's3xx';
+    if (c.startsWith('4')) return 's4xx';
+    if (c.startsWith('5')) return 's5xx';
+    return 's0xx';
+  }
+
+  // ── Cluster cards ─────────────────────────────────────────────────────────
+  async function fetchClusterInfo() {
+    try {
+      const url = NAMENODE + '/jmx?qry=Hadoop:service=NameNode,name=FSNamesystemState';
+      const res  = await fetch(url, FETCH_OPTS);
+      const json = await res.json();
+      const bean = json.beans && json.beans[0];
+      if (bean && bean.NumLiveDataNodes !== undefined) {
+        document.getElementById('card-datanodes').textContent = bean.NumLiveDataNodes;
+      }
+    } catch (e) {
+      // CORS or unreachable — leave as —
+    }
+  }
+
+  async function fetchJobsCompleted() {
+    try {
+      const url = YARN + '/ws/v1/cluster/apps';
+      const res  = await fetch(url, FETCH_OPTS);
+      const json = await res.json();
+      const apps = (json.apps && json.apps.app) ? json.apps.app : [];
+      const done = apps.filter(a => a.finalStatus === 'SUCCEEDED').length;
+      document.getElementById('card-jobs-completed').textContent = done;
+    } catch (e) {
+      // leave as —
+    }
+  }
+
+  // ── Jobs table ────────────────────────────────────────────────────────────
+  function makeBadge(state, finalStatus) {
+    let cls = 'badge-pending', label = state || 'UNKNOWN';
+    if (finalStatus === 'SUCCEEDED') { cls = 'badge-succeeded'; label = 'SUCCEEDED'; }
+    else if (finalStatus === 'FAILED' || finalStatus === 'KILLED') { cls = 'badge-failed'; label = finalStatus; }
+    else if (state === 'RUNNING') { cls = 'badge-running'; label = 'RUNNING'; }
+    return '<span class="badge ' + cls + '">' + label + '</span>';
+  }
+
+  function makeProgressCell(pct, colorClass) {
+    const w = Math.min(100, Math.max(0, pct || 0));
+    return '<div class="progress-wrap">' +
+      '<div class="progress-bar-outer"><div class="progress-bar-inner ' + (colorClass || '') + '" style="width:' + w + '%"></div></div>' +
+      '<span class="progress-pct">' + w.toFixed(0) + '%</span>' +
+      '</div>';
+  }
+
+  function renderJobsTable(apps) {
+    if (!apps || apps.length === 0) {
+      return '<div class="state-loading">No applications found in YARN cluster.</div>';
+    }
+    let rows = '';
+    apps.forEach(function (a) {
+      const duration = (a.elapsedTime !== undefined && a.elapsedTime > 0)
+        ? fmtDuration(a.elapsedTime)
+        : (a.finishedTime && a.startedTime ? fmtDuration(a.finishedTime - a.startedTime) : '—');
+      rows += '<tr>' +
+        '<td><span class="job-name">' + (a.name || a.id) + '</span></td>' +
+        '<td>' + makeBadge(a.state, a.finalStatus) + '</td>' +
+        '<td style="font-variant-numeric:tabular-nums;font-size:13px;">' + duration + '</td>' +
+        '<td>' + makeProgressCell(a.mapProgress * 100, '') + '</td>' +
+        '<td>' + makeProgressCell(a.reduceProgress * 100, 'teal') + '</td>' +
+        '</tr>';
+    });
+    return '<table>' +
+      '<thead><tr>' +
+      '<th>Job Name</th><th>Status</th><th>Duration</th><th>Map %</th><th>Reduce %</th>' +
+      '</tr></thead>' +
+      '<tbody>' + rows + '</tbody>' +
+      '</table>';
+  }
+
+  var jobsPollInterval = null;
+
+  async function fetchJobs() {
+    try {
+      const url = YARN + '/ws/v1/cluster/apps';
+      const res  = await fetch(url, FETCH_OPTS);
+      const json = await res.json();
+      const apps = (json.apps && json.apps.app) ? json.apps.app : [];
+      document.getElementById('jobs-table-wrap').innerHTML = renderJobsTable(apps);
+
+      // update jobs-completed card
+      const done = apps.filter(a => a.finalStatus === 'SUCCEEDED').length;
+      document.getElementById('card-jobs-completed').textContent = done;
+
+      // stop polling when all succeeded
+      if (apps.length > 0 && apps.every(a => a.finalStatus === 'SUCCEEDED' || a.finalStatus === 'FAILED' || a.finalStatus === 'KILLED')) {
+        if (jobsPollInterval) { clearInterval(jobsPollInterval); jobsPollInterval = null; }
+      }
+    } catch (e) {
+      document.getElementById('jobs-table-wrap').innerHTML =
+        '<div class="state-loading">Unable to reach YARN API (http://100.26.134.124:8088) — cluster may be stopped.</div>';
+    }
+  }
+
+  // ── Results tabs ──────────────────────────────────────────────────────────
+  function renderTopResources(data) {
+    if (!data || data.length === 0) return '<div class="state-loading">No data.</div>';
+    const maxCount = Math.max(...data.map(d => d.count));
+    let rows = '';
+    data.forEach(function (d, i) {
+      const pct = maxCount > 0 ? (d.count / maxCount * 100).toFixed(1) : 0;
+      rows += '<tr>' +
+        '<td class="rank-cell">' + (i + 1) + '</td>' +
+        '<td class="path-cell">' + escHtml(d.path) + '</td>' +
+        '<td class="count-cell">' + fmtNum(d.count) + '</td>' +
+        '<td class="bar-cell"><div class="inline-bar" style="width:' + pct + '%;max-width:140px;"></div></td>' +
+        '</tr>';
+    });
+    return '<table class="results-table">' +
+      '<thead><tr><th>#</th><th>Path</th><th style="text-align:right;">Requests</th><th>Frequency</th></tr></thead>' +
+      '<tbody>' + rows + '</tbody></table>';
+  }
+
+  function renderHttpStatus(data) {
+    if (!data || data.length === 0) return '<div class="state-loading">No data.</div>';
+    let rows = '';
+    data.forEach(function (d) {
+      const cls = statusBadgeClass(d.status);
+      rows += '<tr>' +
+        '<td><span class="status-badge ' + cls + '">' + escHtml(d.status) + '</span></td>' +
+        '<td class="count-cell">' + fmtNum(d.count) + '</td>' +
+        '<td style="font-family:\'Geist Mono\',monospace;font-size:13px;font-variant-numeric:tabular-nums;">' + fmtBytes(d.bytes) + '</td>' +
+        '</tr>';
+    });
+    return '<table class="results-table">' +
+      '<thead><tr><th>Status Code</th><th style="text-align:right;">Requests</th><th>Bytes Transferred</th></tr></thead>' +
+      '<tbody>' + rows + '</tbody></table>';
+  }
+
+  function renderHourlyTraffic(data) {
+    if (!data || data.length === 0) return '<div class="state-loading">No data.</div>';
+    const maxCount = Math.max(...data.map(d => d.count));
+    let html = '<div class="hourly-chart-wrap">';
+    for (let h = 0; h < 24; h++) {
+      const entry = data.find(d => d.hour === h);
+      const count = entry ? entry.count : 0;
+      const pct   = maxCount > 0 ? (count / maxCount * 100).toFixed(2) : 0;
+      const label = String(h).padStart(2, '0');
+      html += '<div class="hourly-row">' +
+        '<span class="hour-label">' + label + '</span>' +
+        '<div class="hourly-bar-wrap"><div class="hourly-bar" style="width:' + pct + '%;max-width:100%;"></div></div>' +
+        '<span class="hourly-count">' + fmtNum(count) + '</span>' +
+        '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  async function fetchResults() {
+    // Top resources
+    try {
+      const res  = await fetch('api/results/top_resources.json', FETCH_OPTS);
+      const data = await res.json();
+      document.getElementById('top-resources-content').innerHTML = renderTopResources(data);
+    } catch (e) {
+      document.getElementById('top-resources-content').innerHTML =
+        '<div class="state-loading">Could not load top_resources.json</div>';
+    }
+
+    // HTTP Status
+    try {
+      const res  = await fetch('api/results/status_bytes.json', FETCH_OPTS);
+      const data = await res.json();
+      document.getElementById('http-status-content').innerHTML = renderHttpStatus(data);
+    } catch (e) {
+      document.getElementById('http-status-content').innerHTML =
+        '<div class="state-loading">Could not load status_bytes.json</div>';
+    }
+
+    // Hourly traffic
+    try {
+      const res  = await fetch('api/results/hourly_traffic.json', FETCH_OPTS);
+      const data = await res.json();
+      document.getElementById('hourly-traffic-content').innerHTML = renderHourlyTraffic(data);
+    } catch (e) {
+      document.getElementById('hourly-traffic-content').innerHTML =
+        '<div class="state-loading">Could not load hourly_traffic.json</div>';
+    }
+  }
+
+  // ── Logs polling ──────────────────────────────────────────────────────────
+  var lastLogContent = '';
+
+  async function fetchLogs() {
+    try {
+      const res  = await fetch('api/logs/current.txt', FETCH_OPTS);
+      const text = await res.text();
+      const box  = document.getElementById('logs-box');
+      if (text && text.trim() !== '') {
+        const growing = text.length > lastLogContent.length;
+        lastLogContent = text;
+        box.textContent = text;
+        if (growing) box.scrollTop = box.scrollHeight;
+      }
+    } catch (e) {
+      // silently ignore
+    }
+  }
+
+  // ── Tab switching ─────────────────────────────────────────────────────────
+  document.querySelectorAll('.tab-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      const panel = document.getElementById('tab-' + btn.dataset.tab);
+      if (panel) panel.classList.add('active');
+    });
+  });
+
+  // ── HTML escape helper ────────────────────────────────────────────────────
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ── Boot ──────────────────────────────────────────────────────────────────
+  fetchClusterInfo();
+  fetchJobsCompleted();
+  fetchJobs();
+  fetchResults();
+  fetchLogs();
+
+  jobsPollInterval = setInterval(fetchJobs, 5000);
+  setInterval(fetchLogs, 3000);
+
+})();
+</script>
+</body>
+</html>
