@@ -2,6 +2,7 @@
 set -euo pipefail
 
 JOB_NAME=${1:?usage: run_job.sh <job_name>}
+NUM_REDUCERS=${2:-3}
 
 JAR=$(docker compose exec -T resourcemanager bash -c \
     'ls /opt/hadoop/share/hadoop/tools/lib/hadoop-streaming-*.jar | head -1')
@@ -9,14 +10,19 @@ JAR=$(docker compose exec -T resourcemanager bash -c \
 # Clean previous output so the job does not fail on existing directory
 docker compose exec -T resourcemanager hdfs dfs -rm -r -f "/user/root/output/$JOB_NAME" || true
 
-# Build -files list from every .py in the job directory
+# Docker Desktop WSL2 bind mounts can appear empty inside the container.
+# Copy the scripts directly into the container so -files can reference them.
+docker compose exec -T resourcemanager bash -c "mkdir -p /tmp/jobs/$JOB_NAME"
+docker cp "jobs/$JOB_NAME/." "nasa-resourcemanager:/tmp/jobs/$JOB_NAME/"
+
+# Build -files list from the copied scripts
 FILES=$(docker compose exec -T resourcemanager bash -c \
-    "ls /opt/jobs/$JOB_NAME/*.py" | tr '\n' ',' | sed 's/,$//')
+    "ls /tmp/jobs/$JOB_NAME/*.py" | tr '\n' ',' | sed 's/,$//')
 
 # Detect optional combiner
 COMBINER_ARGS=""
 if docker compose exec -T resourcemanager bash -c \
-        "test -f /opt/jobs/$JOB_NAME/combiner.py" 2>/dev/null; then
+        "test -f /tmp/jobs/$JOB_NAME/combiner.py" 2>/dev/null; then
     COMBINER_ARGS="-combiner 'python3 combiner.py'"
 fi
 
@@ -29,7 +35,7 @@ docker compose exec -T resourcemanager bash -c "
         -reducer 'python3 reducer.py' \
         -input /user/root/input/NASA_access_log_Jul95 \
         -output /user/root/output/$JOB_NAME \
-        -numReduceTasks 1
+        -numReduceTasks $NUM_REDUCERS
 "
 
 echo "Merging output..."

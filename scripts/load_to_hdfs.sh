@@ -19,6 +19,6 @@ if docker compose exec -T namenode hdfs dfs -test -e "$HDFS_FILE" 2>/dev/null; t
 fi
 
 echo "Uploading $LOCAL_FILE to HDFS $HDFS_FILE ..."
-docker compose exec -T namenode hdfs dfs -put "$LOCAL_FILE" "$HDFS_INPUT/"
+docker compose exec -T namenode hdfs dfs -Ddfs.replication=2 -put "$LOCAL_FILE" "$HDFS_INPUT/"
 
 docker compose exec -T namenode hdfs dfs -ls -h "$HDFS_INPUT/"

@@ -2,27 +2,25 @@ SHELL := /bin/bash
 .ONESHELL:
 .DEFAULT_GOAL := help
 
-.PHONY: help up down verify download load job-top job-status results demo clean test
+.PHONY: help up down verify download load job-top job-status results demo clean test report
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*##"; printf "%-15s %s\n", "Target", "Description"; printf "%-15s %s\n", "------", "-----------"} /^[a-zA-Z_-]+:.*?##/ { printf "%-15s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
-up: ## Start the Hadoop cluster (5 containers)
-	docker compose up -d --build
-	echo "Waiting for all containers to be healthy (up to 180s)..."
-	elapsed=0
-	while [ $$elapsed -lt 180 ]; do
-		count=$$(docker inspect --format '{{.State.Health.Status}}' \
-			nasa-namenode nasa-datanode nasa-resourcemanager nasa-nodemanager nasa-historyserver \
-			2>/dev/null | grep -c '^healthy$$' || true)
-		if [ "$$count" -eq 5 ]; then
-			echo "All 5 containers healthy."
-			exit 0
-		fi
-		sleep 5
-		elapsed=$$((elapsed + 5))
-	done
-	echo "Timeout: not all containers healthy after 180s." >&2
+up: ## Start the Hadoop cluster (7 containers)
+	docker compose up -d --build --scale datanode=2 --scale nodemanager=2
+	echo "Waiting for all containers to be healthy (up to 240s)..."
+	elapsed=0; \
+	while [ $$elapsed -lt 240 ]; do \
+		count=$$(docker compose ps --format json 2>/dev/null | python3 -c "import sys,json; data=sys.stdin.read().strip(); rows=[json.loads(l) for l in data.splitlines() if l.strip()]; print(sum(1 for r in rows if r.get('Health')=='healthy'))" 2>/dev/null || echo 0); \
+		if [ "$$count" -ge 7 ]; then \
+			echo "All 7 containers healthy."; \
+			exit 0; \
+		fi; \
+		sleep 5; \
+		elapsed=$$((elapsed + 5)); \
+	done; \
+	echo "Timeout: only $$count/7 containers healthy after 240s." >&2; \
 	exit 1
 
 down: ## Stop the Hadoop cluster
@@ -89,3 +87,8 @@ clean: ## Remove outputs, dataset, and Docker resources
 
 test: ## Run unit tests for mappers and reducers
 	cd tests && python3 -m unittest -v
+
+report: ## Build the technical report PDF (requires TeX Live + biber)
+	python3 scripts/build_figures.py
+	cd report && pdflatex -interaction=nonstopmode main.tex && biber main && pdflatex -interaction=nonstopmode main.tex && pdflatex -interaction=nonstopmode main.tex
+	@echo "Report written to report/main.pdf"
