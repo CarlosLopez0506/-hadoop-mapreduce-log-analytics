@@ -3,451 +3,430 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NASA Access Log Analysis — UP AWS Lab</title>
+<title>NASA Access Log Analysis — MapReduce on AWS</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@300;400;500;600;700&family=Barlow:wght@300;400;500;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --bg:       #FAFAF7;
-    --bg-soft:  #F2EFE6;
-    --bg-card:  #FFFFFF;
-    --ink:      #18181B;
-    --ink-2:    #44444A;
-    --ink-3:    #86868E;
-    --rule:     #E2DFD3;
-    --gold:     #B8924A;
-    --navy:     #1F2A44;
-    --teal:     #3D8B9C;
-    --code-bg:  #14161C;
-    --code-ink: #E7E9EE;
+    --bg:         #EEF1F8;
+    --bg-panel:   #FFFFFF;
+    --bg-card:    #FFFFFF;
+    --bg-raised:  #E4E9F5;
+    --nasa-blue:  #0B3D91;
+    --nasa-blue2: #1B5FBF;
+    --nasa-red:   #D93218;
+    --nasa-red2:  #B8270F;
+    --white:      #FFFFFF;
+    --ink:        #0A0E1A;
+    --ink-2:      #2A3550;
+    --ink-3:      #5A6A8A;
+    --rule:       #C8D0E4;
+    --green:      #007A4D;
+    --amber:      #8A5F00;
+    --teal:       #005F80;
+    --mono:       'Share Tech Mono', monospace;
   }
 
   html { font-size: 16px; }
   body {
-    font-family: 'Geist', sans-serif;
+    font-family: 'Barlow', sans-serif;
     background: var(--bg);
     color: var(--ink);
-    font-feature-settings: "ss01","cv11";
-    -webkit-font-smoothing: antialiased;
+    line-height: 1.6;
+    min-height: 100vh;
   }
 
   /* ── Header ── */
   .site-header {
-    height: 64px;
-    background: var(--bg-card);
-    border-bottom: 1px solid var(--rule);
+    background: var(--white);
+    border-bottom: 2px solid var(--nasa-blue);
+    padding: 0 48px;
+    height: 68px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 48px;
     position: sticky;
     top: 0;
     z-index: 100;
+    box-shadow: 0 1px 4px rgba(11,61,145,0.08);
   }
-  .header-brand {
-    font-family: 'Geist Mono', monospace;
-    font-size: 14px;
-    font-weight: 600;
-    letter-spacing: 0.20em;
-    text-transform: uppercase;
-    color: var(--gold);
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
   }
-  .header-meta {
-    font-family: 'Geist Mono', monospace;
-    font-size: 13px;
+
+  .nasa-worm {
+    font-family: var(--mono);
+    font-size: 22px;
     font-weight: 400;
-    color: var(--ink-3);
+    color: var(--ink);
     letter-spacing: 0.08em;
-  }
-
-  /* ── Hero ── */
-  .hero {
-    max-width: 960px;
-    margin: 0 auto;
-    padding: 80px 48px 64px;
-  }
-  .eyebrow {
-    font-family: 'Geist Mono', monospace;
-    font-size: 14px;
-    font-weight: 600;
-    letter-spacing: 0.20em;
-    text-transform: uppercase;
-    color: var(--gold);
-    margin-bottom: 20px;
-  }
-  .hero h1 {
-    font-size: clamp(48px, 6vw, 80px);
-    font-weight: 500;
-    line-height: 1.05;
-    color: var(--ink);
-    margin-bottom: 24px;
-    white-space: pre-line;
-  }
-  .hero-subtitle {
-    font-size: 20px;
-    font-weight: 400;
-    color: var(--ink-2);
-    line-height: 1.6;
-  }
-
-  /* ── Band ── */
-  .band {
-    background: var(--bg-soft);
-    padding: 48px;
-  }
-  .band-inner {
-    max-width: 960px;
-    margin: 0 auto;
-  }
-
-  /* ── Cards row ── */
-  .cards-row {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 20px;
-  }
-  .card {
-    background: var(--bg-card);
-    border: 1px solid var(--rule);
-    border-radius: 12px;
-    padding: 28px 24px;
-  }
-  .card-label {
-    font-family: 'Geist Mono', monospace;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--gold);
-    margin-bottom: 12px;
-  }
-  .card-number {
-    font-size: 36px;
-    font-weight: 700;
-    color: var(--ink);
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
-    margin-bottom: 8px;
-  }
-  .card-desc {
-    font-size: 13px;
-    color: var(--ink-3);
-    font-weight: 400;
-  }
-
-  /* ── Section wrapper ── */
-  .section {
-    max-width: 960px;
-    margin: 0 auto;
-    padding: 64px 48px;
-  }
-  .section-eyebrow {
-    font-family: 'Geist Mono', monospace;
-    font-size: 14px;
-    font-weight: 600;
-    letter-spacing: 0.20em;
-    text-transform: uppercase;
-    color: var(--gold);
-    margin-bottom: 24px;
-  }
-
-  /* ── Jobs table ── */
-  .table-card {
-    background: var(--bg-card);
-    border: 1px solid var(--rule);
-    border-radius: 12px;
-    overflow: hidden;
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-  thead tr {
-    border-bottom: 1px solid var(--rule);
-  }
-  thead th {
-    padding: 14px 20px;
-    text-align: left;
-    font-family: 'Geist Mono', monospace;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--ink-3);
-    background: var(--bg-soft);
-  }
-  tbody tr {
-    border-bottom: 1px solid var(--rule);
-    transition: background 0.15s;
-  }
-  tbody tr:last-child { border-bottom: none; }
-  tbody tr:hover { background: var(--bg-soft); }
-  tbody td {
-    padding: 16px 20px;
-    font-size: 14px;
-    color: var(--ink-2);
-    vertical-align: middle;
-  }
-  .job-name {
-    font-family: 'Geist Mono', monospace;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--navy);
-  }
-  .badge {
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: 6px;
-    font-family: 'Geist Mono', monospace;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.10em;
-    text-transform: uppercase;
-  }
-  .badge-succeeded { background: #E8F9F0; color: #3CB97A; }
-  .badge-running   { background: #FDF4E7; color: #B8924A; }
-  .badge-failed    { background: #FDEAEA; color: #DC3545; }
-  .badge-pending   { background: #F0F0F0; color: var(--ink-3); }
-
-  .progress-wrap {
     display: flex;
     align-items: center;
     gap: 10px;
   }
-  .progress-bar-outer {
-    flex: 1;
-    height: 6px;
+
+  .nasa-worm .worm-red {
+    color: var(--nasa-red);
+    font-size: 26px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+  }
+
+  .header-divider {
+    width: 1px;
+    height: 28px;
     background: var(--rule);
-    border-radius: 3px;
-    overflow: hidden;
   }
-  .progress-bar-inner {
-    height: 100%;
-    border-radius: 3px;
-    background: var(--navy);
-    transition: width 0.4s ease;
-  }
-  .progress-bar-inner.teal { background: var(--teal); }
-  .progress-pct {
-    font-family: 'Geist Mono', monospace;
-    font-size: 12px;
-    font-weight: 500;
+
+  .header-mission {
+    font-family: var(--mono);
+    font-size: 11px;
     color: var(--ink-3);
-    width: 36px;
-    text-align: right;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .header-right {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-3);
+    letter-spacing: 0.14em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* ── Hero ── */
+  .hero {
+    padding: 72px 48px 56px;
+    border-bottom: 1px solid var(--rule);
+    max-width: 1100px;
+  }
+
+  .mission-tag {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--nasa-red);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .mission-tag::before {
+    content: '';
+    display: inline-block;
+    width: 24px; height: 2px;
+    background: var(--nasa-red);
+  }
+
+  h1 {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: clamp(52px, 7vw, 96px);
+    font-weight: 700;
+    line-height: 0.95;
+    letter-spacing: -0.01em;
+    text-transform: uppercase;
+    color: var(--ink);
+    margin-bottom: 24px;
+  }
+
+  h1 .highlight { color: var(--nasa-blue); }
+
+  .hero-sub {
+    font-size: 16px;
+    font-weight: 400;
+    color: var(--ink-2);
+    max-width: 620px;
+    line-height: 1.7;
+    font-family: var(--mono);
+    letter-spacing: 0.04em;
+  }
+
+  /* ── Section ── */
+  .section {
+    max-width: 1100px;
+    padding: 56px 48px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .section-eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--nasa-blue2);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    margin-bottom: 28px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .section-eyebrow::before {
+    content: '';
+    display: inline-block;
+    width: 16px; height: 1px;
+    background: var(--nasa-blue2);
+  }
+
+  /* ── Cluster cards ── */
+  .cards-band {
+    background: var(--white);
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .cards-inner {
+    max-width: 1100px;
+    padding: 40px 48px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--rule);
+  }
+
+  .cluster-card {
+    background: var(--white);
+    padding: 28px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .card-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-3);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+  }
+
+  .card-value {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 52px;
+    font-weight: 700;
+    color: var(--nasa-blue);
+    line-height: 1;
     font-variant-numeric: tabular-nums;
+  }
+
+  .card-desc {
+    font-size: 12px;
+    color: var(--ink-3);
+    line-height: 1.4;
+  }
+
+  /* ── Jobs table ── */
+  .table-wrap { overflow-x: auto; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  thead th {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    text-align: left;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  tbody tr {
+    border-bottom: 1px solid var(--rule);
+    transition: background 0.15s;
+  }
+
+  tbody tr:hover { background: var(--bg-raised); }
+
+  tbody td {
+    padding: 14px 16px;
+    color: var(--ink-2);
+    vertical-align: middle;
+  }
+
+  .job-name {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink);
+    letter-spacing: 0.04em;
+  }
+
+  /* badges */
+  .badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 2px;
+  }
+
+  .badge-succeeded { background: rgba(0,120,75,0.10); color: var(--green); border: 1px solid rgba(0,120,75,0.25); }
+  .badge-running   { background: rgba(138,95,0,0.10);  color: var(--amber); border: 1px solid rgba(138,95,0,0.25); }
+  .badge-failed    { background: rgba(217,50,24,0.10);  color: var(--nasa-red); border: 1px solid rgba(217,50,24,0.25); }
+  .badge-pending   { background: rgba(90,106,138,0.12); color: var(--ink-3); border: 1px solid var(--rule); }
+
+  /* progress */
+  .progress-wrap { display: flex; align-items: center; gap: 8px; }
+  .progress-bar-outer { flex: 1; height: 4px; background: var(--rule); border-radius: 2px; max-width: 100px; }
+  .progress-bar-inner { height: 100%; background: var(--nasa-blue2); border-radius: 2px; transition: width 0.4s; }
+  .progress-bar-inner.teal { background: var(--teal); }
+  .progress-pct { font-family: var(--mono); font-size: 11px; color: var(--ink-3); min-width: 28px; }
+
+  .state-loading {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--ink-3);
+    padding: 24px 0;
+    letter-spacing: 0.06em;
   }
 
   /* ── Tabs ── */
   .tabs-header {
     display: flex;
     gap: 0;
+    margin-bottom: 28px;
     border-bottom: 1px solid var(--rule);
-    margin-bottom: 0;
   }
+
   .tab-btn {
-    padding: 14px 24px;
-    font-family: 'Geist Mono', monospace;
-    font-size: 13px;
-    font-weight: 500;
-    letter-spacing: 0.10em;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: var(--ink-3);
-    cursor: pointer;
-    border: none;
     background: none;
+    border: none;
+    color: var(--ink-3);
+    padding: 12px 20px;
+    cursor: pointer;
     border-bottom: 2px solid transparent;
     margin-bottom: -1px;
     transition: color 0.15s, border-color 0.15s;
   }
-  .tab-btn:hover { color: var(--ink-2); }
-  .tab-btn.active {
-    color: var(--navy);
-    border-bottom-color: var(--navy);
-  }
-  .tab-panel { display: none; padding: 28px 0 0; }
+
+  .tab-btn:hover { color: var(--ink); }
+  .tab-btn.active { color: var(--nasa-red); border-bottom-color: var(--nasa-red); }
+
+  .tab-panel { display: none; }
   .tab-panel.active { display: block; }
 
-  /* ── Results tables ── */
-  .results-table { width: 100%; border-collapse: collapse; }
-  .results-table th {
-    text-align: left;
-    padding: 10px 16px;
-    font-family: 'Geist Mono', monospace;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.14em;
+  /* results tables */
+  .results-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .results-table thead th {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    color: var(--ink-3);
     text-transform: uppercase;
-    color: var(--ink-3);
+    padding: 8px 12px;
     border-bottom: 1px solid var(--rule);
+    text-align: left;
   }
-  .results-table td {
-    padding: 12px 16px;
-    font-size: 14px;
-    color: var(--ink-2);
-    border-bottom: 1px solid var(--rule);
-    vertical-align: middle;
-  }
-  .results-table tr:last-child td { border-bottom: none; }
-  .results-table tr:hover td { background: var(--bg-soft); }
+  .results-table tbody tr { border-bottom: 1px solid rgba(200,208,228,0.7); }
+  .results-table tbody tr:hover { background: var(--bg-raised); }
+  .results-table tbody td { padding: 10px 12px; color: var(--ink-2); vertical-align: middle; }
 
-  .rank-cell {
-    font-family: 'Geist Mono', monospace;
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--ink-3);
-    width: 40px;
-    font-variant-numeric: tabular-nums;
-  }
-  .path-cell {
-    font-family: 'Geist Mono', monospace;
-    font-size: 12px;
-    color: var(--navy);
-    word-break: break-all;
-    max-width: 400px;
-  }
-  .count-cell {
-    font-family: 'Geist Mono', monospace;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--ink);
-    font-variant-numeric: tabular-nums;
-    text-align: right;
-    white-space: nowrap;
-    width: 100px;
-  }
-  .bar-cell { width: 160px; padding-right: 24px; }
+  .rank-cell  { font-family: var(--mono); font-size: 11px; color: var(--ink-3); width: 32px; }
+  .path-cell  { font-family: var(--mono); font-size: 12px; color: var(--ink); max-width: 400px; word-break: break-all; }
+  .count-cell { font-family: var(--mono); font-size: 13px; color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; }
+  .bar-cell   { width: 160px; }
+
   .inline-bar {
-    height: 8px;
-    border-radius: 4px;
-    background: var(--navy);
+    height: 4px;
+    background: var(--nasa-blue2);
+    border-radius: 2px;
     min-width: 2px;
   }
-  .inline-bar.teal { background: var(--teal); }
 
-  /* Hourly chart */
-  .hourly-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 7px 0;
-    border-bottom: 1px solid var(--rule);
-  }
-  .hourly-row:last-child { border-bottom: none; }
-  .hour-label {
-    font-family: 'Geist Mono', monospace;
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--ink-3);
-    width: 32px;
-    flex-shrink: 0;
-    font-variant-numeric: tabular-nums;
-  }
-  .hourly-bar-wrap {
-    flex: 1;
-    height: 18px;
-    display: flex;
-    align-items: center;
-  }
-  .hourly-bar {
-    height: 14px;
-    border-radius: 3px;
-    background: var(--teal);
-    min-width: 2px;
-  }
-  .hourly-count {
-    font-family: 'Geist Mono', monospace;
-    font-size: 12px;
-    color: var(--ink-3);
-    width: 80px;
-    text-align: right;
-    flex-shrink: 0;
-    font-variant-numeric: tabular-nums;
-  }
-  .hourly-chart-wrap {
-    background: var(--bg-card);
-    border: 1px solid var(--rule);
-    border-radius: 12px;
-    padding: 24px 28px;
-  }
-
-  /* Status badges in results */
   .status-badge {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 5px;
-    font-family: 'Geist Mono', monospace;
+    font-family: var(--mono);
     font-size: 12px;
     font-weight: 600;
-    font-variant-numeric: tabular-nums;
+    padding: 2px 8px;
+    border-radius: 2px;
   }
-  .s2xx { background: #E8F9F0; color: #3CB97A; }
-  .s3xx { background: #FDF4E7; color: #B8924A; }
-  .s4xx { background: #E6F6F9; color: #3D8B9C; }
-  .s5xx { background: #FDEAEA; color: #DC3545; }
-  .s0xx { background: #F0F0F0; color: var(--ink-3); }
+  .s2xx { background: rgba(0,120,75,0.10);  color: var(--green); }
+  .s3xx { background: rgba(138,95,0,0.10);  color: var(--amber); }
+  .s4xx { background: rgba(0,95,128,0.10);  color: var(--teal); }
+  .s5xx { background: rgba(217,50,24,0.10); color: var(--nasa-red); }
+  .s0xx { background: rgba(90,106,138,0.10); color: var(--ink-3); }
+
+  /* hourly chart */
+  .hourly-chart-wrap { display: flex; flex-direction: column; gap: 6px; }
+  .hourly-row { display: flex; align-items: center; gap: 12px; }
+  .hour-label { font-family: var(--mono); font-size: 11px; color: var(--ink-3); width: 24px; text-align: right; }
+  .hourly-bar-wrap { flex: 1; height: 16px; background: var(--rule); border-radius: 2px; overflow: hidden; }
+  .hourly-bar { height: 100%; background: linear-gradient(90deg, var(--teal), var(--nasa-blue2)); border-radius: 2px; transition: width 0.6s ease; }
+  .hourly-count { font-family: var(--mono); font-size: 11px; color: var(--ink-3); width: 72px; text-align: right; font-variant-numeric: tabular-nums; }
 
   /* ── Logs ── */
   .logs-box {
-    background: var(--code-bg);
-    border-radius: 12px;
-    padding: 32px;
-    max-height: 400px;
+    background: #F8F9FC;
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--nasa-blue);
+    border-radius: 4px;
+    padding: 24px 28px;
+    max-height: 380px;
     overflow-y: auto;
-    font-family: 'Geist Mono', monospace;
-    font-size: 13px;
-    color: var(--code-ink);
+    font-family: var(--mono);
+    font-size: 12px;
+    color: #2A3A5C;
     line-height: 1.7;
+    letter-spacing: 0.04em;
     white-space: pre-wrap;
     word-break: break-all;
   }
-  .logs-box::-webkit-scrollbar { width: 6px; }
+
+  .logs-box::-webkit-scrollbar { width: 4px; }
   .logs-box::-webkit-scrollbar-track { background: transparent; }
-  .logs-box::-webkit-scrollbar-thumb { background: #2A2D36; border-radius: 3px; }
+  .logs-box::-webkit-scrollbar-thumb { background: var(--nasa-blue); border-radius: 2px; }
 
   /* ── Footer ── */
   footer {
-    border-top: 1px solid var(--rule);
-    padding: 28px 48px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+    border-top: 2px solid var(--nasa-blue);
+    background: var(--white);
   }
+
   .footer-inner {
-    max-width: 960px;
-    margin: 0 auto;
-    width: 100%;
+    max-width: 1100px;
+    padding: 20px 48px;
     display: flex;
     justify-content: space-between;
     align-items: center;
   }
-  .footer-left, .footer-right {
-    font-family: 'Geist Mono', monospace;
-    font-size: 12px;
-    color: var(--ink-3);
-    font-weight: 400;
-    letter-spacing: 0.06em;
-  }
 
-  /* Loading / empty states */
-  .state-loading {
-    font-family: 'Geist Mono', monospace;
-    font-size: 13px;
+  footer span {
+    font-family: var(--mono);
+    font-size: 11px;
     color: var(--ink-3);
-    padding: 32px 0;
-    text-align: center;
-  }
-
-  @media (max-width: 720px) {
-    .cards-row { grid-template-columns: repeat(2, 1fr); }
-    .site-header { padding: 0 24px; }
-    .hero { padding: 48px 24px 40px; }
-    .band { padding: 32px 24px; }
-    .section { padding: 40px 24px; }
-    footer { padding: 24px; }
+    letter-spacing: 0.14em;
   }
 </style>
 </head>
@@ -455,102 +434,91 @@
 
 <!-- ══ Header ══ -->
 <header class="site-header">
-  <span class="header-brand">UP · AWS Lab</span>
-  <span class="header-meta">023579852268 · us-east-1</span>
+  <div class="header-left">
+    <div class="nasa-worm">
+      <span class="worm-red">NASA</span>
+      <span>ACCESS LOG</span>
+    </div>
+    <div class="header-divider"></div>
+    <div class="header-mission">MapReduce · AWS EC2 · Hadoop 3.4.1</div>
+  </div>
+  <div class="header-right">
+    <div class="status-dot"></div>
+    CLUSTER ONLINE · 023579852268 · us-east-1
+  </div>
 </header>
 
 <!-- ══ Hero ══ -->
 <section class="hero">
-  <p class="eyebrow">HADOOP · DOCKER · EC2</p>
-  <h1>NASA Access Log
-Analysis</h1>
-  <p class="hero-subtitle">1.9M HTTP requests · July 1995 · 3 MapReduce jobs · 2 DataNodes · 3 Reducers</p>
+  <p class="mission-tag">Mission Data Analysis</p>
+  <h1>NASA <span class="highlight">Access Log</span><br>Analysis</h1>
+  <p class="hero-sub">1,891,715 HTTP requests · July 1995 · Kennedy Space Center · 3 MapReduce jobs · 2 DataNodes · 3 Reducers per job</p>
 </section>
 
-<!-- ══ Cluster Info Cards ══ -->
-<div class="band">
-  <div class="band-inner">
-    <div class="cards-row">
-      <div class="card">
-        <div class="card-label">DATANODES</div>
-        <div class="card-number" id="card-datanodes">—</div>
-        <div class="card-desc">Live DataNodes in cluster</div>
-      </div>
-      <div class="card">
-        <div class="card-label">REPLICATION</div>
-        <div class="card-number">2</div>
-        <div class="card-desc">HDFS replication factor</div>
-      </div>
-      <div class="card">
-        <div class="card-label">TOTAL REQUESTS</div>
-        <div class="card-number">1,891,715</div>
-        <div class="card-desc">HTTP log entries — Jul 1995</div>
-      </div>
-      <div class="card">
-        <div class="card-label">JOBS COMPLETED</div>
-        <div class="card-number" id="card-jobs-completed">—</div>
-        <div class="card-desc">YARN apps with SUCCEEDED status</div>
-      </div>
+<!-- ══ Cluster Cards ══ -->
+<div class="cards-band">
+  <div class="cards-inner">
+    <div class="cluster-card">
+      <span class="card-label">Datanodes</span>
+      <span class="card-value" id="card-datanodes">—</span>
+      <span class="card-desc">Live DataNodes in cluster</span>
+    </div>
+    <div class="cluster-card">
+      <span class="card-label">Replication</span>
+      <span class="card-value">2</span>
+      <span class="card-desc">HDFS replication factor</span>
+    </div>
+    <div class="cluster-card">
+      <span class="card-label">Total Requests</span>
+      <span class="card-value">1.89M</span>
+      <span class="card-desc">HTTP requests processed</span>
+    </div>
+    <div class="cluster-card">
+      <span class="card-label">Jobs Completed</span>
+      <span class="card-value" id="card-jobs-completed">—</span>
+      <span class="card-desc">YARN apps with SUCCEEDED status</span>
     </div>
   </div>
 </div>
 
-<!-- ══ MapReduce Jobs ══ -->
+<!-- ══ Jobs ══ -->
 <div class="section">
-  <p class="section-eyebrow">MAPREDUCE JOBS</p>
-  <div class="table-card">
-    <div id="jobs-table-wrap">
-      <div class="state-loading">Fetching jobs from YARN…</div>
-    </div>
+  <p class="section-eyebrow">MapReduce Jobs</p>
+  <div class="table-wrap" id="jobs-table-wrap">
+    <div class="state-loading">Loading YARN applications…</div>
   </div>
 </div>
 
-<!-- ══ Results Tabs ══ -->
-<div class="band">
-  <div class="band-inner">
-    <p class="section-eyebrow">ANALYSIS RESULTS</p>
-    <div class="table-card">
-      <div class="tabs-header">
-        <button class="tab-btn active" data-tab="top-resources">Top Resources</button>
-        <button class="tab-btn" data-tab="http-status">HTTP Status</button>
-        <button class="tab-btn" data-tab="hourly-traffic">Hourly Traffic</button>
-      </div>
-
-      <!-- Tab: Top Resources -->
-      <div class="tab-panel active" id="tab-top-resources" style="padding: 0 24px 24px;">
-        <div style="padding-top: 24px;">
-          <div id="top-resources-content"><div class="state-loading">Loading top_resources.json…</div></div>
-        </div>
-      </div>
-
-      <!-- Tab: HTTP Status -->
-      <div class="tab-panel" id="tab-http-status" style="padding: 0 24px 24px;">
-        <div style="padding-top: 24px;">
-          <div id="http-status-content"><div class="state-loading">Loading status_bytes.json…</div></div>
-        </div>
-      </div>
-
-      <!-- Tab: Hourly Traffic -->
-      <div class="tab-panel" id="tab-hourly-traffic" style="padding: 0 24px 24px;">
-        <div style="padding-top: 24px;">
-          <div id="hourly-traffic-content"><div class="state-loading">Loading hourly_traffic.json…</div></div>
-        </div>
-      </div>
-    </div>
+<!-- ══ Results ══ -->
+<div class="section">
+  <p class="section-eyebrow">Job Results</p>
+  <div class="tabs-header">
+    <button class="tab-btn active" data-tab="top">Top Resources</button>
+    <button class="tab-btn" data-tab="status">HTTP Status</button>
+    <button class="tab-btn" data-tab="hourly">Hourly Traffic</button>
+  </div>
+  <div id="tab-top" class="tab-panel active">
+    <div id="top-resources-content"><div class="state-loading">Loading…</div></div>
+  </div>
+  <div id="tab-status" class="tab-panel">
+    <div id="http-status-content"><div class="state-loading">Loading…</div></div>
+  </div>
+  <div id="tab-hourly" class="tab-panel">
+    <div id="hourly-traffic-content"><div class="state-loading">Loading…</div></div>
   </div>
 </div>
 
 <!-- ══ Logs ══ -->
 <div class="section">
-  <p class="section-eyebrow">EXECUTION LOGS</p>
+  <p class="section-eyebrow">Execution Logs</p>
   <div class="logs-box" id="logs-box">Waiting for logs…</div>
 </div>
 
 <!-- ══ Footer ══ -->
 <footer>
   <div class="footer-inner">
-    <span class="footer-left">Universidad Panamericana · Cloud Computing</span>
-    <span class="footer-right">AWS EC2 · Docker · Hadoop 3.4.1 · Python 3</span>
+    <span>Universidad Panamericana · Cloud Computing</span>
+    <span>AWS EC2 · Docker · Hadoop 3.4.1 · Python 3</span>
   </div>
 </footer>
 
@@ -558,14 +526,11 @@ Analysis</h1>
 (function () {
   'use strict';
 
-  const NAMENODE   = 'http://100.26.134.124:9870';
-  const YARN       = 'http://100.26.134.124:8088';
+  const NAMENODE   = '/hdfs';
+  const YARN       = '/yarn';
   const FETCH_OPTS = { cache: 'no-store' };
 
-  // ── Utility ──────────────────────────────────────────────────────────────
-  function fmtNum(n) {
-    return Number(n).toLocaleString('en-US');
-  }
+  function fmtNum(n) { return Number(n).toLocaleString('en-US'); }
 
   function fmtBytes(bytes) {
     const b = Number(bytes);
@@ -593,7 +558,6 @@ Analysis</h1>
     return 's0xx';
   }
 
-  // ── Cluster cards ─────────────────────────────────────────────────────────
   async function fetchClusterInfo() {
     try {
       const url = NAMENODE + '/jmx?qry=Hadoop:service=NameNode,name=FSNamesystemState';
@@ -603,9 +567,7 @@ Analysis</h1>
       if (bean && bean.NumLiveDataNodes !== undefined) {
         document.getElementById('card-datanodes').textContent = bean.NumLiveDataNodes;
       }
-    } catch (e) {
-      // CORS or unreachable — leave as —
-    }
+    } catch (e) {}
   }
 
   async function fetchJobsCompleted() {
@@ -616,12 +578,9 @@ Analysis</h1>
       const apps = (json.apps && json.apps.app) ? json.apps.app : [];
       const done = apps.filter(a => a.finalStatus === 'SUCCEEDED').length;
       document.getElementById('card-jobs-completed').textContent = done;
-    } catch (e) {
-      // leave as —
-    }
+    } catch (e) {}
   }
 
-  // ── Jobs table ────────────────────────────────────────────────────────────
   function makeBadge(state, finalStatus) {
     let cls = 'badge-pending', label = state || 'UNKNOWN';
     if (finalStatus === 'SUCCEEDED') { cls = 'badge-succeeded'; label = 'SUCCEEDED'; }
@@ -650,7 +609,7 @@ Analysis</h1>
       rows += '<tr>' +
         '<td><span class="job-name">' + (a.name || a.id) + '</span></td>' +
         '<td>' + makeBadge(a.state, a.finalStatus) + '</td>' +
-        '<td style="font-variant-numeric:tabular-nums;font-size:13px;">' + duration + '</td>' +
+        '<td style="font-family:\'Share Tech Mono\',monospace;font-size:13px;">' + duration + '</td>' +
         '<td>' + makeProgressCell(a.mapProgress * 100, '') + '</td>' +
         '<td>' + makeProgressCell(a.reduceProgress * 100, 'teal') + '</td>' +
         '</tr>';
@@ -672,22 +631,17 @@ Analysis</h1>
       const json = await res.json();
       const apps = (json.apps && json.apps.app) ? json.apps.app : [];
       document.getElementById('jobs-table-wrap').innerHTML = renderJobsTable(apps);
-
-      // update jobs-completed card
       const done = apps.filter(a => a.finalStatus === 'SUCCEEDED').length;
       document.getElementById('card-jobs-completed').textContent = done;
-
-      // stop polling when all succeeded
       if (apps.length > 0 && apps.every(a => a.finalStatus === 'SUCCEEDED' || a.finalStatus === 'FAILED' || a.finalStatus === 'KILLED')) {
         if (jobsPollInterval) { clearInterval(jobsPollInterval); jobsPollInterval = null; }
       }
     } catch (e) {
       document.getElementById('jobs-table-wrap').innerHTML =
-        '<div class="state-loading">Unable to reach YARN API (http://100.26.134.124:8088) — cluster may be stopped.</div>';
+        '<div class="state-loading">Unable to reach YARN API — cluster may be stopped.</div>';
     }
   }
 
-  // ── Results tabs ──────────────────────────────────────────────────────────
   function renderTopResources(data) {
     if (!data || data.length === 0) return '<div class="state-loading">No data.</div>';
     const maxCount = Math.max(...data.map(d => d.count));
@@ -714,7 +668,7 @@ Analysis</h1>
       rows += '<tr>' +
         '<td><span class="status-badge ' + cls + '">' + escHtml(d.status) + '</span></td>' +
         '<td class="count-cell">' + fmtNum(d.count) + '</td>' +
-        '<td style="font-family:\'Geist Mono\',monospace;font-size:13px;font-variant-numeric:tabular-nums;">' + fmtBytes(d.bytes) + '</td>' +
+        '<td style="font-family:\'Share Tech Mono\',monospace;font-size:13px;font-variant-numeric:tabular-nums;">' + fmtBytes(d.bytes) + '</td>' +
         '</tr>';
     });
     return '<table class="results-table">' +
@@ -742,7 +696,6 @@ Analysis</h1>
   }
 
   async function fetchResults() {
-    // Top resources
     try {
       const res  = await fetch('api/results/top_resources.json', FETCH_OPTS);
       const data = await res.json();
@@ -751,8 +704,6 @@ Analysis</h1>
       document.getElementById('top-resources-content').innerHTML =
         '<div class="state-loading">Could not load top_resources.json</div>';
     }
-
-    // HTTP Status
     try {
       const res  = await fetch('api/results/status_bytes.json', FETCH_OPTS);
       const data = await res.json();
@@ -761,8 +712,6 @@ Analysis</h1>
       document.getElementById('http-status-content').innerHTML =
         '<div class="state-loading">Could not load status_bytes.json</div>';
     }
-
-    // Hourly traffic
     try {
       const res  = await fetch('api/results/hourly_traffic.json', FETCH_OPTS);
       const data = await res.json();
@@ -773,7 +722,6 @@ Analysis</h1>
     }
   }
 
-  // ── Logs polling ──────────────────────────────────────────────────────────
   var lastLogContent = '';
 
   async function fetchLogs() {
@@ -787,12 +735,9 @@ Analysis</h1>
         box.textContent = text;
         if (growing) box.scrollTop = box.scrollHeight;
       }
-    } catch (e) {
-      // silently ignore
-    }
+    } catch (e) {}
   }
 
-  // ── Tab switching ─────────────────────────────────────────────────────────
   document.querySelectorAll('.tab-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -803,7 +748,6 @@ Analysis</h1>
     });
   });
 
-  // ── HTML escape helper ────────────────────────────────────────────────────
   function escHtml(s) {
     return String(s)
       .replace(/&/g, '&amp;')
@@ -812,14 +756,13 @@ Analysis</h1>
       .replace(/"/g, '&quot;');
   }
 
-  // ── Boot ──────────────────────────────────────────────────────────────────
   fetchClusterInfo();
   fetchJobsCompleted();
   fetchJobs();
   fetchResults();
-  fetchLogs();
 
   jobsPollInterval = setInterval(fetchJobs, 5000);
+  setInterval(fetchClusterInfo, 10000);
   setInterval(fetchLogs, 3000);
 
 })();

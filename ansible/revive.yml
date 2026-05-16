@@ -1,0 +1,241 @@
+---
+# NASA MapReduce — EC2 Revival Playbook
+#
+# ONE-TIME LOCAL SETUP:
+#   pip install boto3 botocore ansible
+#   ansible-galaxy collection install -r ansible/requirements.yml
+#   # Install Session Manager Plugin:
+#   # https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html
+#
+# USAGE:
+#   export AWS_ACCESS_KEY_ID=...
+#   export AWS_SECRET_ACCESS_KEY=...
+#   export AWS_DEFAULT_REGION=us-east-1
+#   export REPO_URL=https://github.com/<user>/ml-big-data
+#   cd /path/to/ml-big-data
+#   ansible-playbook ansible/revive.yml
+#
+# TEARDOWN (terminate instance):
+#   ansible-playbook ansible/revive.yml --tags teardown
+
+
+# ─────────────────────────────────────────────
+# Play 1: Launch EC2 (runs locally)
+# ─────────────────────────────────────────────
+- name: Launch EC2
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    region: "{{ lookup('env', 'AWS_DEFAULT_REGION') | default('us-east-1') }}"
+    repo_url: "{{ lookup('env', 'REPO_URL') }}"
+    instance_type: m5.xlarge
+    sg_id: sg-0ce597dbefd715675
+    iam_profile: LabRole
+    project_tag: nasa-mapreduce
+
+  tasks:
+    - name: Validate REPO_URL is set
+      ansible.builtin.fail:
+        msg: "Set REPO_URL env var to your git repo (e.g. https://github.com/user/ml-big-data)"
+      when: repo_url == ""
+
+    - name: Get latest Amazon Linux 2023 AMI
+      amazon.aws.ec2_ami_info:
+        region: "{{ region }}"
+        owners: amazon
+        filters:
+          name: "al2023-ami-2023*-x86_64"
+          state: available
+      register: ami_info
+
+    - name: Launch instance (idempotent — skips if already running)
+      amazon.aws.ec2_instance:
+        region: "{{ region }}"
+        name: "{{ project_tag }}"
+        instance_type: "{{ instance_type }}"
+        image_id: "{{ (ami_info.images | sort(attribute='creation_date') | last).image_id }}"
+        security_groups: ["{{ sg_id }}"]
+        iam_instance_profile: "{{ iam_profile }}"
+        volumes:
+          - device_name: /dev/xvda
+            ebs:
+              volume_size: 30
+              volume_type: gp3
+              delete_on_termination: true
+        user_data: "{{ lookup('file', playbook_dir + '/../scripts/ec2_bootstrap.sh') }}"
+        tags:
+          Project: "{{ project_tag }}"
+        wait: true
+        state: running
+      register: ec2
+
+    - name: Add instance to in-memory inventory
+      ansible.builtin.add_host:
+        name: "{{ ec2.instances[0].instance_id }}"
+        groups: cluster
+        ansible_connection: community.aws.aws_ssm
+        ansible_aws_ssm_region: "{{ region }}"
+        ansible_aws_ssm_transfer_method: piped
+        ec2_ip: "{{ ec2.instances[0].public_ip_address }}"
+        repo_url: "{{ repo_url }}"
+
+    - name: Instance details
+      ansible.builtin.debug:
+        msg:
+          - "Instance : {{ ec2.instances[0].instance_id }}"
+          - "IP       : {{ ec2.instances[0].public_ip_address }}"
+
+
+# ─────────────────────────────────────────────
+# Play 2: Deploy (runs on EC2 via SSM)
+# ─────────────────────────────────────────────
+- name: Deploy NASA MapReduce
+  hosts: cluster
+  gather_facts: false
+
+  tasks:
+    - name: Wait for SSM connection
+      ansible.builtin.wait_for_connection:
+        timeout: 180
+
+    - name: Wait for User Data (Docker install) to finish
+      ansible.builtin.shell: |
+        until [ -f /tmp/bootstrap_done ]; do sleep 5; done
+        echo ready
+      register: bootstrap
+      until: bootstrap.rc == 0
+      retries: 36
+      delay: 5
+
+    - name: Wait for Docker daemon
+      ansible.builtin.shell: docker info
+      register: docker_ready
+      until: docker_ready.rc == 0
+      retries: 24
+      delay: 5
+
+    - name: Clone or update project repo
+      ansible.builtin.shell: |
+        if [ -d /home/ec2-user/ml-big-data/.git ]; then
+          git -C /home/ec2-user/ml-big-data pull --ff-only
+        else
+          git clone {{ repo_url }} /home/ec2-user/ml-big-data
+        fi
+      register: git_result
+      changed_when: "'Already up to date' not in git_result.stdout"
+
+    - name: Build Docker image
+      ansible.builtin.shell: |
+        cd /home/ec2-user/ml-big-data
+        docker build -t mapreduce-nasa:3.4.1 .
+      register: build_result
+      changed_when: true
+
+    - name: Start Hadoop cluster (2 datanodes + 2 nodemanagers)
+      ansible.builtin.shell: |
+        cd /home/ec2-user/ml-big-data
+        docker compose up -d --scale datanode=2 --scale nodemanager=2
+
+    - name: Wait for all 7 containers to be healthy
+      ansible.builtin.shell: |
+        cd /home/ec2-user/ml-big-data
+        count=$(docker compose ps --format json \
+          | python3 -c "
+        import sys, json
+        rows = [json.loads(l) for l in sys.stdin if l.strip()]
+        print(sum(1 for r in rows if r.get('Health') == 'healthy'))
+        ")
+        echo "$count"
+        [ "$count" -ge 7 ]
+      register: health
+      until: health.rc == 0
+      retries: 48
+      delay: 10
+
+    - name: Download NASA dataset
+      ansible.builtin.shell: |
+        cd /home/ec2-user/ml-big-data
+        make download
+      register: download
+      changed_when: "'Already downloaded' not in download.stdout"
+
+    - name: Load dataset into HDFS
+      ansible.builtin.shell: |
+        cd /home/ec2-user/ml-big-data
+        make load
+
+    - name: Run Job 1 — top_resources
+      ansible.builtin.shell: |
+        cd /home/ec2-user/ml-big-data
+        make job-top
+
+    - name: Run Job 2 — status_bytes
+      ansible.builtin.shell: |
+        cd /home/ec2-user/ml-big-data
+        make job-status
+
+    - name: Run Job 3 — hourly_traffic
+      ansible.builtin.shell: |
+        cd /home/ec2-user/ml-big-data
+        make job-hourly
+
+    - name: Install and configure Apache
+      ansible.builtin.shell: |
+        yum install -y httpd
+        systemctl start httpd
+        systemctl enable httpd
+        mkdir -p /etc/httpd/conf.d
+        cat > /etc/httpd/conf.d/hadoop-proxy.conf << 'APACHEEOF'
+        LoadModule proxy_module modules/mod_proxy.so
+        LoadModule proxy_http_module modules/mod_proxy_http.so
+        LoadModule headers_module modules/mod_headers.so
+        Header always set Access-Control-Allow-Origin "*"
+        ProxyPass /yarn/ http://localhost:8088/
+        ProxyPassReverse /yarn/ http://localhost:8088/
+        ProxyPass /hdfs/ http://localhost:9870/
+        ProxyPassReverse /hdfs/ http://localhost:9870/
+        APACHEEOF
+        systemctl restart httpd
+
+    - name: Generate results JSON and deploy dashboard
+      ansible.builtin.shell: |
+        cd /home/ec2-user/ml-big-data
+        bash scripts/results_to_json.sh
+        mkdir -p /var/www/html/api/results /var/www/html/api/logs
+        cp dashboard/index.html /var/www/html/index.html
+        cp dashboard/api/results/*.json /var/www/html/api/results/
+        echo '' > /var/www/html/api/logs/current.txt
+
+    - name: Done — open these URLs
+      ansible.builtin.debug:
+        msg:
+          - "Dashboard    http://{{ ec2_ip }}"
+          - "YARN UI      http://{{ ec2_ip }}:8088"
+          - "NameNode UI  http://{{ ec2_ip }}:9870"
+          - "History      http://{{ ec2_ip }}:19888"
+
+
+# ─────────────────────────────────────────────
+# Play 3: Teardown (ansible-playbook ... --tags teardown)
+# ─────────────────────────────────────────────
+- name: Teardown
+  hosts: localhost
+  gather_facts: false
+  tags: [teardown, never]
+
+  vars:
+    region: "{{ lookup('env', 'AWS_DEFAULT_REGION') | default('us-east-1') }}"
+
+  tasks:
+    - name: Terminate nasa-mapreduce instance
+      amazon.aws.ec2_instance:
+        region: "{{ region }}"
+        filters:
+          "tag:Project": nasa-mapreduce
+          "instance-state-name": running
+        state: terminated
+
+    - name: Confirm
+      ansible.builtin.debug:
+        msg: "Instance terminated. No further charges."
