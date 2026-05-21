@@ -17,3 +17,13 @@ nasa-demo.pem
 .ec2_key
 # Dashboard generated files (real job results)
 dashboard/api/
+# Redundant directory placeholders
+**/.gitkeep
+# Dev-only / planning artifacts
+docs/
+tests/
+report/
+CLAUDE.md
+scripts/setup_ansible.sh
+scripts/build_figures.py
+scripts/ec2_deploy.sh
