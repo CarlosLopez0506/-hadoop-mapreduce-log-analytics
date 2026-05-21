@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NASA Access Log Analysis — MapReduce on AWS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@300;400;500;600;700&family=Barlow:wght@300;400;500;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:         #EEF1F8;
+    --bg-panel:   #FFFFFF;
+    --bg-card:    #FFFFFF;
+    --bg-raised:  #E4E9F5;
+    --nasa-blue:  #0B3D91;
+    --nasa-blue2: #1B5FBF;
+    --nasa-red:   #D93218;
+    --nasa-red2:  #B8270F;
+    --white:      #FFFFFF;
+    --ink:        #0A0E1A;
+    --ink-2:      #2A3550;
+    --ink-3:      #5A6A8A;
+    --rule:       #C8D0E4;
+    --green:      #007A4D;
+    --amber:      #8A5F00;
+    --teal:       #005F80;
+    --mono:       'Share Tech Mono', monospace;
+  }
+
+  html { font-size: 16px; }
+  body {
+    font-family: 'Barlow', sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  .site-header {
+    background: var(--white);
+    border-bottom: 2px solid var(--nasa-blue);
+    padding: 0 48px;
+    height: 68px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 1px 4px rgba(11,61,145,0.08);
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .nasa-worm {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 400;
+    color: var(--ink);
+    letter-spacing: 0.08em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .nasa-worm .worm-red {
+    color: var(--nasa-red);
+    font-size: 26px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+  }
+
+  .header-divider {
+    width: 1px;
+    height: 28px;
+    background: var(--rule);
+  }
+
+  .header-mission {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-3);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .header-right {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-3);
+    letter-spacing: 0.14em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* ── Hero ── */
+  .hero {
+    padding: 72px 48px 56px;
+    border-bottom: 1px solid var(--rule);
+    max-width: 1100px;
+  }
+
+  .mission-tag {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--nasa-red);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .mission-tag::before {
+    content: '';
+    display: inline-block;
+    width: 24px; height: 2px;
+    background: var(--nasa-red);
+  }
+
+  h1 {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: clamp(52px, 7vw, 96px);
+    font-weight: 700;
+    line-height: 0.95;
+    letter-spacing: -0.01em;
+    text-transform: uppercase;
+    color: var(--ink);
+    margin-bottom: 24px;
+  }
+
+  h1 .highlight { color: var(--nasa-blue); }
+
+  .hero-sub {
+    font-size: 16px;
+    font-weight: 400;
+    color: var(--ink-2);
+    max-width: 620px;
+    line-height: 1.7;
+    font-family: var(--mono);
+    letter-spacing: 0.04em;
+  }
+
+  /* ── Section ── */
+  .section {
+    max-width: 1100px;
+    padding: 56px 48px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .section-eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--nasa-blue2);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    margin-bottom: 28px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .section-eyebrow::before {
+    content: '';
+    display: inline-block;
+    width: 16px; height: 1px;
+    background: var(--nasa-blue2);
+  }
+
+  /* ── Cluster cards ── */
+  .cards-band {
+    background: var(--white);
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .cards-inner {
+    max-width: 1100px;
+    padding: 40px 48px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--rule);
+  }
+
+  .cluster-card {
+    background: var(--white);
+    padding: 28px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .card-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-3);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+  }
+
+  .card-value {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 52px;
+    font-weight: 700;
+    color: var(--nasa-blue);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .card-desc {
+    font-size: 12px;
+    color: var(--ink-3);
+    line-height: 1.4;
+  }
+
+  /* ── Jobs table ── */
+  .table-wrap { overflow-x: auto; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  thead th {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    text-align: left;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  tbody tr {
+    border-bottom: 1px solid var(--rule);
+    transition: background 0.15s;
+  }
+
+  tbody tr:hover { background: var(--bg-raised); }
+
+  tbody td {
+    padding: 14px 16px;
+    color: var(--ink-2);
+    vertical-align: middle;
+  }
+
+  .job-name {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink);
+    letter-spacing: 0.04em;
+  }
+
+  /* badges */
+  .badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 2px;
+  }
+
+  .badge-succeeded { background: rgba(0,120,75,0.10); color: var(--green); border: 1px solid rgba(0,120,75,0.25); }
+  .badge-running   { background: rgba(138,95,0,0.10);  color: var(--amber); border: 1px solid rgba(138,95,0,0.25); }
+  .badge-failed    { background: rgba(217,50,24,0.10);  color: var(--nasa-red); border: 1px solid rgba(217,50,24,0.25); }
+  .badge-pending   { background: rgba(90,106,138,0.12); color: var(--ink-3); border: 1px solid var(--rule); }
+
+  /* progress */
+  .progress-wrap { display: flex; align-items: center; gap: 8px; }
+  .progress-bar-outer { flex: 1; height: 4px; background: var(--rule); border-radius: 2px; max-width: 100px; }
+  .progress-bar-inner { height: 100%; background: var(--nasa-blue2); border-radius: 2px; transition: width 0.4s; }
+  .progress-bar-inner.teal { background: var(--teal); }
+  .progress-pct { font-family: var(--mono); font-size: 11px; color: var(--ink-3); min-width: 28px; }
+
+  .state-loading {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--ink-3);
+    padding: 24px 0;
+    letter-spacing: 0.06em;
+  }
+
+  /* ── Tabs ── */
+  .tabs-header {
+    display: flex;
+    gap: 0;
+    margin-bottom: 28px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .tab-btn {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    background: none;
+    border: none;
+    color: var(--ink-3);
+    padding: 12px 20px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .tab-btn:hover { color: var(--ink); }
+  .tab-btn.active { color: var(--nasa-red); border-bottom-color: var(--nasa-red); }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* results tables */
+  .results-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .results-table thead th {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    color: var(--ink-3);
+    text-transform: uppercase;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--rule);
+    text-align: left;
+  }
+  .results-table tbody tr { border-bottom: 1px solid rgba(200,208,228,0.7); }
+  .results-table tbody tr:hover { background: var(--bg-raised); }
+  .results-table tbody td { padding: 10px 12px; color: var(--ink-2); vertical-align: middle; }
+
+  .rank-cell  { font-family: var(--mono); font-size: 11px; color: var(--ink-3); width: 32px; }
+  .path-cell  { font-family: var(--mono); font-size: 12px; color: var(--ink); max-width: 400px; word-break: break-all; }
+  .count-cell { font-family: var(--mono); font-size: 13px; color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; }
+  .bar-cell   { width: 160px; }
+
+  .inline-bar {
+    height: 4px;
+    background: var(--nasa-blue2);
+    border-radius: 2px;
+    min-width: 2px;
+  }
+
+  .status-badge {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 2px;
+  }
+  .s2xx { background: rgba(0,120,75,0.10);  color: var(--green); }
+  .s3xx { background: rgba(138,95,0,0.10);  color: var(--amber); }
+  .s4xx { background: rgba(0,95,128,0.10);  color: var(--teal); }
+  .s5xx { background: rgba(217,50,24,0.10); color: var(--nasa-red); }
+  .s0xx { background: rgba(90,106,138,0.10); color: var(--ink-3); }
+
+  /* hourly chart */
+  .hourly-chart-wrap { display: flex; flex-direction: column; gap: 6px; }
+  .hourly-row { display: flex; align-items: center; gap: 12px; }
+  .hour-label { font-family: var(--mono); font-size: 11px; color: var(--ink-3); width: 24px; text-align: right; }
+  .hourly-bar-wrap { flex: 1; height: 16px; background: var(--rule); border-radius: 2px; overflow: hidden; }
+  .hourly-bar { height: 100%; background: linear-gradient(90deg, var(--teal), var(--nasa-blue2)); border-radius: 2px; transition: width 0.6s ease; }
+  .hourly-count { font-family: var(--mono); font-size: 11px; color: var(--ink-3); width: 72px; text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* ── Logs ── */
+  .logs-box {
+    background: #F8F9FC;
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--nasa-blue);
+    border-radius: 4px;
+    padding: 24px 28px;
+    max-height: 380px;
+    overflow-y: auto;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: #2A3A5C;
+    line-height: 1.7;
+    letter-spacing: 0.04em;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  .logs-box::-webkit-scrollbar { width: 4px; }
+  .logs-box::-webkit-scrollbar-track { background: transparent; }
+  .logs-box::-webkit-scrollbar-thumb { background: var(--nasa-blue); border-radius: 2px; }
+
+  /* ── Footer ── */
+  footer {
+    border-top: 2px solid var(--nasa-blue);
+    background: var(--white);
+  }
+
+  .footer-inner {
+    max-width: 1100px;
+    padding: 20px 48px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  footer span {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-3);
+    letter-spacing: 0.14em;
+  }
+</style>
+</head>
+<body>
+
+<!-- ══ Header ══ -->
+<header class="site-header">
+  <div class="header-left">
+    <div class="nasa-worm">
+      <span class="worm-red">NASA</span>
+      <span>ACCESS LOG</span>
+    </div>
+    <div class="header-divider"></div>
+    <div class="header-mission">MapReduce · AWS EC2 · Hadoop 3.4.1</div>
+  </div>
+  <div class="header-right">
+    <div class="status-dot"></div>
+    CLUSTER ONLINE · 023579852268 · us-east-1
+  </div>
+</header>
+
+<!-- ══ Hero ══ -->
+<section class="hero">
+  <p class="mission-tag">Mission Data Analysis</p>
+  <h1>NASA <span class="highlight">Access Log</span><br>Analysis</h1>
+  <p class="hero-sub">1,891,715 HTTP requests · July 1995 · Kennedy Space Center · 3 MapReduce jobs · 2 DataNodes · 3 Reducers per job</p>
+</section>
+
+<!-- ══ Cluster Cards ══ -->
+<div class="cards-band">
+  <div class="cards-inner">
+    <div class="cluster-card">
+      <span class="card-label">Datanodes</span>
+      <span class="card-value" id="card-datanodes">—</span>
+      <span class="card-desc">Live DataNodes in cluster</span>
+    </div>
+    <div class="cluster-card">
+      <span class="card-label">Replication</span>
+      <span class="card-value">2</span>
+      <span class="card-desc">HDFS replication factor</span>
+    </div>
+    <div class="cluster-card">
+      <span class="card-label">Total Requests</span>
+      <span class="card-value">1.89M</span>
+      <span class="card-desc">HTTP requests processed</span>
+    </div>
+    <div class="cluster-card">
+      <span class="card-label">Jobs Completed</span>
+      <span class="card-value" id="card-jobs-completed">—</span>
+      <span class="card-desc">YARN apps with SUCCEEDED status</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Jobs ══ -->
+<div class="section">
+  <p class="section-eyebrow">MapReduce Jobs</p>
+  <div class="table-wrap" id="jobs-table-wrap">
+    <div class="state-loading">Loading YARN applications…</div>
+  </div>
+</div>
+
+<!-- ══ Results ══ -->
+<div class="section">
+  <p class="section-eyebrow">Job Results</p>
+  <div class="tabs-header">
+    <button class="tab-btn active" data-tab="top">Top Resources</button>
+    <button class="tab-btn" data-tab="status">HTTP Status</button>
+    <button class="tab-btn" data-tab="hourly">Hourly Traffic</button>
+  </div>
+  <div id="tab-top" class="tab-panel active">
+    <div id="top-resources-content"><div class="state-loading">Loading…</div></div>
+  </div>
+  <div id="tab-status" class="tab-panel">
+    <div id="http-status-content"><div class="state-loading">Loading…</div></div>
+  </div>
+  <div id="tab-hourly" class="tab-panel">
+    <div id="hourly-traffic-content"><div class="state-loading">Loading…</div></div>
+  </div>
+</div>
+
+<!-- ══ Logs ══ -->
+<div class="section">
+  <p class="section-eyebrow">Execution Logs</p>
+  <div class="logs-box" id="logs-box">Waiting for logs…</div>
+</div>
+
+<!-- ══ Footer ══ -->
+<footer>
+  <div class="footer-inner">
+    <span>Universidad Panamericana · Cloud Computing</span>
+    <span>AWS EC2 · Docker · Hadoop 3.4.1 · Python 3</span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  'use strict';
+
+  const NAMENODE   = '/hdfs';
+  const YARN       = '/yarn';
+  const FETCH_OPTS = { cache: 'no-store' };
+
+  function fmtNum(n) { return Number(n).toLocaleString('en-US'); }
+
+  function fmtBytes(bytes) {
+    const b = Number(bytes);
+    if (b >= 1e9)  return (b / 1e9).toFixed(2) + ' GB';
+    if (b >= 1e6)  return (b / 1e6).toFixed(1) + ' MB';
+    if (b >= 1e3)  return (b / 1e3).toFixed(1) + ' KB';
+    return b + ' B';
+  }
+
+  function fmtDuration(ms) {
+    if (!ms || ms <= 0) return '—';
+    const s = Math.round(ms / 1000);
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    if (m === 0) return sec + 's';
+    return m + 'm ' + sec + 's';
+  }
+
+  function statusBadgeClass(code) {
+    const c = String(code);
+    if (c.startsWith('2')) return 's2xx';
+    if (c.startsWith('3')) return 's3xx';
+    if (c.startsWith('4')) return 's4xx';
+    if (c.startsWith('5')) return 's5xx';
+    return 's0xx';
+  }
+
+  async function fetchClusterInfo() {
+    try {
+      const url = NAMENODE + '/jmx?qry=Hadoop:service=NameNode,name=FSNamesystemState';
+      const res  = await fetch(url, FETCH_OPTS);
+      const json = await res.json();
+      const bean = json.beans && json.beans[0];
+      if (bean && bean.NumLiveDataNodes !== undefined) {
+        document.getElementById('card-datanodes').textContent = bean.NumLiveDataNodes;
+      }
+    } catch (e) {}
+  }
+
+  async function fetchJobsCompleted() {
+    try {
+      const url = YARN + '/ws/v1/cluster/apps';
+      const res  = await fetch(url, FETCH_OPTS);
+      const json = await res.json();
+      const apps = (json.apps && json.apps.app) ? json.apps.app : [];
+      const done = apps.filter(a => a.finalStatus === 'SUCCEEDED').length;
+      document.getElementById('card-jobs-completed').textContent = done;
+    } catch (e) {}
+  }
+
+  function makeBadge(state, finalStatus) {
+    let cls = 'badge-pending', label = state || 'UNKNOWN';
+    if (finalStatus === 'SUCCEEDED') { cls = 'badge-succeeded'; label = 'SUCCEEDED'; }
+    else if (finalStatus === 'FAILED' || finalStatus === 'KILLED') { cls = 'badge-failed'; label = finalStatus; }
+    else if (state === 'RUNNING') { cls = 'badge-running'; label = 'RUNNING'; }
+    return '<span class="badge ' + cls + '">' + label + '</span>';
+  }
+
+  function makeProgressCell(pct, colorClass) {
+    const w = Math.min(100, Math.max(0, pct || 0));
+    return '<div class="progress-wrap">' +
+      '<div class="progress-bar-outer"><div class="progress-bar-inner ' + (colorClass || '') + '" style="width:' + w + '%"></div></div>' +
+      '<span class="progress-pct">' + w.toFixed(0) + '%</span>' +
+      '</div>';
+  }
+
+  function renderJobsTable(apps) {
+    if (!apps || apps.length === 0) {
+      return '<div class="state-loading">No applications found in YARN cluster.</div>';
+    }
+    let rows = '';
+    apps.forEach(function (a) {
+      const duration = (a.elapsedTime !== undefined && a.elapsedTime > 0)
+        ? fmtDuration(a.elapsedTime)
+        : (a.finishedTime && a.startedTime ? fmtDuration(a.finishedTime - a.startedTime) : '—');
+      rows += '<tr>' +
+        '<td><span class="job-name">' + (a.name || a.id) + '</span></td>' +
+        '<td>' + makeBadge(a.state, a.finalStatus) + '</td>' +
+        '<td style="font-family:\'Share Tech Mono\',monospace;font-size:13px;">' + duration + '</td>' +
+        '<td>' + makeProgressCell(a.mapProgress * 100, '') + '</td>' +
+        '<td>' + makeProgressCell(a.reduceProgress * 100, 'teal') + '</td>' +
+        '</tr>';
+    });
+    return '<table>' +
+      '<thead><tr>' +
+      '<th>Job Name</th><th>Status</th><th>Duration</th><th>Map %</th><th>Reduce %</th>' +
+      '</tr></thead>' +
+      '<tbody>' + rows + '</tbody>' +
+      '</table>';
+  }
+
+  var jobsPollInterval = null;
+
+  async function fetchJobs() {
+    try {
+      const url = YARN + '/ws/v1/cluster/apps';
+      const res  = await fetch(url, FETCH_OPTS);
+      const json = await res.json();
+      const apps = (json.apps && json.apps.app) ? json.apps.app : [];
+      document.getElementById('jobs-table-wrap').innerHTML = renderJobsTable(apps);
+      const done = apps.filter(a => a.finalStatus === 'SUCCEEDED').length;
+      document.getElementById('card-jobs-completed').textContent = done;
+      if (apps.length > 0 && apps.every(a => a.finalStatus === 'SUCCEEDED' || a.finalStatus === 'FAILED' || a.finalStatus === 'KILLED')) {
+        if (jobsPollInterval) { clearInterval(jobsPollInterval); jobsPollInterval = null; }
+      }
+    } catch (e) {
+      document.getElementById('jobs-table-wrap').innerHTML =
+        '<div class="state-loading">Unable to reach YARN API — cluster may be stopped.</div>';
+    }
+  }
+
+  function renderTopResources(data) {
+    if (!data || data.length === 0) return '<div class="state-loading">No data.</div>';
+    const maxCount = Math.max(...data.map(d => d.count));
+    let rows = '';
+    data.forEach(function (d, i) {
+      const pct = maxCount > 0 ? (d.count / maxCount * 100).toFixed(1) : 0;
+      rows += '<tr>' +
+        '<td class="rank-cell">' + (i + 1) + '</td>' +
+        '<td class="path-cell">' + escHtml(d.path) + '</td>' +
+        '<td class="count-cell">' + fmtNum(d.count) + '</td>' +
+        '<td class="bar-cell"><div class="inline-bar" style="width:' + pct + '%;max-width:140px;"></div></td>' +
+        '</tr>';
+    });
+    return '<table class="results-table">' +
+      '<thead><tr><th>#</th><th>Path</th><th style="text-align:right;">Requests</th><th>Frequency</th></tr></thead>' +
+      '<tbody>' + rows + '</tbody></table>';
+  }
+
+  function renderHttpStatus(data) {
+    if (!data || data.length === 0) return '<div class="state-loading">No data.</div>';
+    let rows = '';
+    data.forEach(function (d) {
+      const cls = statusBadgeClass(d.status);
+      rows += '<tr>' +
+        '<td><span class="status-badge ' + cls + '">' + escHtml(d.status) + '</span></td>' +
+        '<td class="count-cell">' + fmtNum(d.count) + '</td>' +
+        '<td style="font-family:\'Share Tech Mono\',monospace;font-size:13px;font-variant-numeric:tabular-nums;">' + fmtBytes(d.bytes) + '</td>' +
+        '</tr>';
+    });
+    return '<table class="results-table">' +
+      '<thead><tr><th>Status Code</th><th style="text-align:right;">Requests</th><th>Bytes Transferred</th></tr></thead>' +
+      '<tbody>' + rows + '</tbody></table>';
+  }
+
+  function renderHourlyTraffic(data) {
+    if (!data || data.length === 0) return '<div class="state-loading">No data.</div>';
+    const maxCount = Math.max(...data.map(d => d.count));
+    let html = '<div class="hourly-chart-wrap">';
+    for (let h = 0; h < 24; h++) {
+      const entry = data.find(d => d.hour === h);
+      const count = entry ? entry.count : 0;
+      const pct   = maxCount > 0 ? (count / maxCount * 100).toFixed(2) : 0;
+      const label = String(h).padStart(2, '0');
+      html += '<div class="hourly-row">' +
+        '<span class="hour-label">' + label + '</span>' +
+        '<div class="hourly-bar-wrap"><div class="hourly-bar" style="width:' + pct + '%;max-width:100%;"></div></div>' +
+        '<span class="hourly-count">' + fmtNum(count) + '</span>' +
+        '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  async function fetchResults() {
+    try {
+      const res  = await fetch('api/results/top_resources.json', FETCH_OPTS);
+      const data = await res.json();
+      document.getElementById('top-resources-content').innerHTML = renderTopResources(data);
+    } catch (e) {
+      document.getElementById('top-resources-content').innerHTML =
+        '<div class="state-loading">Could not load top_resources.json</div>';
+    }
+    try {
+      const res  = await fetch('api/results/status_bytes.json', FETCH_OPTS);
+      const data = await res.json();
+      document.getElementById('http-status-content').innerHTML = renderHttpStatus(data);
+    } catch (e) {
+      document.getElementById('http-status-content').innerHTML =
+        '<div class="state-loading">Could not load status_bytes.json</div>';
+    }
+    try {
+      const res  = await fetch('api/results/hourly_traffic.json', FETCH_OPTS);
+      const data = await res.json();
+      document.getElementById('hourly-traffic-content').innerHTML = renderHourlyTraffic(data);
+    } catch (e) {
+      document.getElementById('hourly-traffic-content').innerHTML =
+        '<div class="state-loading">Could not load hourly_traffic.json</div>';
+    }
+  }
+
+  var lastLogContent = '';
+
+  async function fetchLogs() {
+    try {
+      const res  = await fetch('api/logs/current.txt', FETCH_OPTS);
+      const text = await res.text();
+      const box  = document.getElementById('logs-box');
+      if (text && text.trim() !== '') {
+        const growing = text.length > lastLogContent.length;
+        lastLogContent = text;
+        box.textContent = text;
+        if (growing) box.scrollTop = box.scrollHeight;
+      }
+    } catch (e) {}
+  }
+
+  document.querySelectorAll('.tab-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      const panel = document.getElementById('tab-' + btn.dataset.tab);
+      if (panel) panel.classList.add('active');
+    });
+  });
+
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  fetchClusterInfo();
+  fetchJobsCompleted();
+  fetchJobs();
+  fetchResults();
+
+  jobsPollInterval = setInterval(fetchJobs, 5000);
+  setInterval(fetchClusterInfo, 10000);
+  setInterval(fetchLogs, 3000);
+
+})();
+</script>
+</body>
+</html>
