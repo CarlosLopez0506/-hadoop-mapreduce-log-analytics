@@ -5,8 +5,8 @@ Hadoop 3.4.1 · Python 3 · Docker Compose
 ## Quickstart
 
 ```bash
-make up      # build image, start 5 containers, wait until healthy
-make demo    # download dataset, load to HDFS, run both jobs, print results
+make up      # build image, start 7 containers (2 datanodes + 2 nodemanagers), wait until healthy
+make demo    # download dataset, load to HDFS, run all 3 jobs, print results
 make down    # stop and remove containers
 ```
 
@@ -46,41 +46,40 @@ Cost: ~$0.13 for a full run (~40 min at $0.192/hr for m5.xlarge).
 
 ## What this is
 
-Two MapReduce streaming jobs over the NASA Kennedy Space Center HTTP access log for July 1995 (1.9 M requests, 205 MB uncompressed). Job 1 counts hits per URL and uses a combiner to demonstrate the map → combine → shuffle → reduce flow. Job 2 groups requests by HTTP status code and sums bytes transferred per group. The entire pipeline runs inside five Docker containers and collapses to one command: `make demo`.
+Three MapReduce streaming jobs over the NASA Kennedy Space Center HTTP access log for July 1995 (1.9 M requests, 205 MB uncompressed). Job 1 counts hits per URL and uses a combiner to demonstrate the map → combine → shuffle → reduce flow. Job 2 groups requests by HTTP status code and sums bytes transferred per group. Job 3 computes request volume by hour of day.
+
+The primary deployment runs on **AWS EC2** (m5.xlarge, us-east-1) via a single Ansible playbook that provisions the instance, clones the repo, builds the Docker image, starts the 7-container Hadoop cluster, downloads the dataset, runs all three jobs, and deploys a results dashboard — all unattended. The same pipeline also runs locally with `make demo` for development.
 
 ## Architecture
 
 ```
-                            host (WSL2 / Linux)
-                            +-------------------------+
-                            |  ./data/                |   bind mount
-                            |    NASA_access_log_*    | <----------------+
-                            |    output/              |                  |
-                            |  ./jobs/  (mappers)     | <----------+     |
-                            +-------------------------+            |     |
-                                                                   |     |
-docker-compose network "hadoop_net"                                |     |
-+-----------------+  +-----------------+  +-----------------+      |     |
-| namenode        |  | datanode        |  | resourcemanager |  ----+     |
-|  hdfs namenode  |  |  hdfs datanode  |  |  yarn rm + job  |  /opt/jobs |
-|  :9870 (web UI) |  |  :9864 (web UI) |  |  submission     |  /data     |
-+--------+--------+  +--------+--------+  |  :8088 (web UI) |  ----------+
-         |                    |           +--------+--------+
-         |   HDFS RPC :8020   |                    |
-         +--------------------+                    |
-                                                   |
-                            +-----------------+    |
-                            | nodemanager     | <--+
-                            |  yarn nm        |
-                            |  :8042 (web UI) |
-                            +-----------------+
-
-                            +-----------------+
-                            | historyserver   |
-                            |  mapred hs      |
-                            |  :19888 (UI)    |
-                            +-----------------+
+                        AWS us-east-1
+                 ┌──────────────────────────────────┐
+                 │  EC2 m5.xlarge (4 vCPU, 16 GB)   │
+                 │                                  │
+                 │  Docker Compose                  │
+                 │                                  │
+                 │  ┌─────────────┐  :9870 NameNode │
+                 │  │  namenode   │                 │
+                 │  └──────┬──────┘                 │
+                 │  ┌──────┴──────┐  HDFS repl=2    │
+                 │  │ datanode×2  │                 │
+                 │  └─────────────┘                 │
+                 │  ┌──────────────────┐  :8088 YARN │
+                 │  │ resourcemanager  │             │
+                 │  └──────┬───────────┘             │
+                 │  ┌──────┴──────┐  3 reducers/job  │
+                 │  │nodemanager×2│                  │
+                 │  └─────────────┘                  │
+                 │  ┌─────────────┐  :19888 History  │
+                 │  │historyserver│                  │
+                 │  └─────────────┘                  │
+                 │                                   │
+                 │  Apache httpd  :80  → dashboard   │
+                 └───────────────────────────────────┘
 ```
+
+Ansible connects to the instance via **AWS SSM** (no SSH key required). The playbook is idempotent: re-running it on an existing instance skips already-completed steps.
 
 Full per-record trace: [docs/architecture.md](docs/architecture.md)
 
@@ -116,7 +115,7 @@ mapred streaming \
     -reducer  "python3 reducer.py"  \
     -input  /user/root/input/NASA_access_log_Jul95 \
     -output /user/root/output/top_resources \
-    -numReduceTasks 1
+    -numReduceTasks 3
 ```
 
 **Data locations at each step:**
@@ -135,10 +134,10 @@ mapred streaming \
 | Port | Service | URL |
 |---|---|---|
 | 9870 | NameNode | http://localhost:9870 |
-| 9864 | DataNode | http://localhost:9864 |
 | 8088 | ResourceManager (YARN) | http://localhost:8088 |
-| 8042 | NodeManager | http://localhost:8042 |
 | 19888 | Job History Server | http://localhost:19888 |
+
+DataNode and NodeManager containers run with dynamic host ports (no fixed mapping) to support `--scale`. Access their UIs from the NameNode or ResourceManager web interfaces.
 
 ## Metrics
 
@@ -157,15 +156,27 @@ Full output and counter details: [docs/sample_output.md](docs/sample_output.md)
 
 Bytes shuffled: 1,052,911 (vs 64,593,229 pre-combine — 98% reduction).
 
-**Job 2 — status_bytes** (wall-clock ~34 s)
+**Job 2 — status_bytes** (wall-clock ~34 s, no combiner)
 
 | Stage | Records |
 |---|---|
 | Map input | 1,891,715 |
-| Combine input | 0 (no combiner) |
 | Reduce input | 1,891,713 |
 | Reduce output (distinct statuses) | 8 |
 | nasa.malformed_line | 2 |
+
+Notable: status 304 (Not Modified) always yields 0 bytes — HTTP spec invariant confirmed by the data.
+
+**Job 3 — hourly_traffic** (wall-clock ~27 s)
+
+| Stage | Records |
+|---|---|
+| Map input | 1,891,715 |
+| Combine input | 1,889,757 |
+| Combine output | 24 |
+| Reduce output (hours 00–23) | 24 |
+
+Peak: hour 14 UTC (122,479 req ≈ 10 AM EDT). Trough: hour 05 UTC (31,919 req).
 
 ## Troubleshooting
 
@@ -175,7 +186,7 @@ Another service (Spark, Airflow, another Hadoop) may be using these ports. Chang
 
 **Slow first start — datanode not registering**
 
-The `make up` target polls every 5 s for up to 180 s until all five containers report `healthy`. If it times out, run `docker compose logs datanode` to check whether the datanode is still waiting on the namenode's RPC port. Usually a second `make up` (idempotent) resolves it.
+The `make up` target polls every 5 s for up to 180 s until all seven containers report `healthy`. If it times out, run `docker compose logs datanode` to check whether the datanodes are still waiting on the namenode's RPC port. Usually a second `make up` (idempotent) resolves it.
 
 **YARN container OOM**
 
