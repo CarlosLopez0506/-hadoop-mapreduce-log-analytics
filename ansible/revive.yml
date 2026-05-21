@@ -113,11 +113,11 @@
       delay: 5
 
     - name: Wait for Docker daemon
-      ansible.builtin.shell: docker info
+      ansible.builtin.shell: sudo docker info
       register: docker_ready
       until: docker_ready.rc == 0
-      retries: 24
-      delay: 5
+      retries: 36
+      delay: 10
 
     - name: Fix project dir ownership
       become_user: root
