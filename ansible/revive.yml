@@ -104,20 +104,23 @@
         timeout: 180
 
     - name: Wait for User Data (Docker install) to finish
-      ansible.builtin.shell: |
-        until [ -f /tmp/bootstrap_done ]; do sleep 5; done
-        echo ready
+      ansible.builtin.shell: test -f /tmp/bootstrap_done
       register: bootstrap
       until: bootstrap.rc == 0
-      retries: 36
-      delay: 5
+      retries: 60
+      delay: 10
+      changed_when: false
+
+    - name: Reset SSM connection before deploy
+      ansible.builtin.meta: reset_connection
 
     - name: Wait for Docker daemon
-      ansible.builtin.shell: sudo docker info
+      ansible.builtin.shell: sudo docker info > /dev/null 2>&1
       register: docker_ready
       until: docker_ready.rc == 0
-      retries: 36
-      delay: 10
+      retries: 30
+      delay: 5
+      changed_when: false
 
     - name: Fix project dir ownership
       ansible.builtin.shell: |
