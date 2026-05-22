@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
-yum update -y
+# Exclude amazon-ssm-agent from updates — updating it restarts the agent
+# mid-session and kills Ansible's active SSM connection.
+yum update -y --exclude=amazon-ssm-agent
 yum install -y docker git make
 systemctl start docker
 systemctl enable docker

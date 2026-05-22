@@ -112,14 +112,6 @@
       retries: 36
       delay: 5
 
-    - name: Re-establish SSM connection after yum update restarts SSM agent
-      ansible.builtin.wait_for_connection:
-        timeout: 120
-
-    - name: Wait for SSM agent to fully stabilize
-      ansible.builtin.pause:
-        seconds: 30
-
     - name: Wait for Docker daemon
       ansible.builtin.shell: sudo docker info
       register: docker_ready
