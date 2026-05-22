@@ -10,20 +10,11 @@ make demo    # download dataset, load to HDFS, run all 3 jobs, print results
 make down    # stop and remove containers
 ```
 
-## Run on AWS EC2 (Ansible)
+## Run on AWS EC2
 
-Deploys the full cluster on an EC2 m5.xlarge via SSM — no SSH required.
+Deploys the full demo on an EC2 m5.xlarge using AWS SSM Run Command — no SSH, no Ansible. A single bash script orchestrates 13 steps end-to-end; each step is an idempotent SSM RPC that AWS queues until the agent is ready, so the deploy is robust to transient agent disconnects during bootstrap.
 
-**One-time local setup:**
-
-```bash
-pip install boto3 botocore ansible
-ansible-galaxy collection install -r ansible/requirements.yml
-# Install Session Manager Plugin:
-# https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html
-```
-
-**Every session:**
+**Requirements:** the `aws` CLI and `python3`. That's it.
 
 ```bash
 export AWS_ACCESS_KEY_ID=...
@@ -31,15 +22,15 @@ export AWS_SECRET_ACCESS_KEY=...
 export AWS_DEFAULT_REGION=us-east-1
 export REPO_URL=https://github.com/CarlosLopez0506/-hadoop-mapreduce-log-analytics
 
-ansible-playbook ansible/revive.yml
+make aws-deploy        # or: bash scripts/aws_deploy.sh
 ```
 
-This single command: launches the EC2 instance, clones the repo, builds the Docker image, starts the 7-container Hadoop cluster, downloads the dataset, loads it into HDFS, runs all 3 MapReduce jobs, and deploys the dashboard.
+This single command: finds the latest Amazon Linux 2023 AMI, launches an `m5.xlarge` tagged `nasa-mapreduce` (idempotent on tag), waits for SSM agent registration and User Data bootstrap, clones the repo, builds the Docker image, starts the 7-container Hadoop cluster, downloads the NASA dataset, loads it into HDFS, runs all 3 MapReduce jobs, installs Apache with a reverse-proxy config, and deploys the dashboard. Progress is printed step by step.
 
 **When done:**
 
 ```bash
-ansible-playbook ansible/revive.yml --tags teardown
+make aws-teardown      # or: bash scripts/aws_teardown.sh
 ```
 
 Cost: ~$0.13 for a full run (~40 min at $0.192/hr for m5.xlarge).
