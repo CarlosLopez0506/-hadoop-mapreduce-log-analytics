@@ -31,8 +31,9 @@ BOLD=$'\e[1m'; DIM=$'\e[2m'; GREEN=$'\e[32m'; YELLOW=$'\e[33m'
 RED=$'\e[31m'; BLUE=$'\e[34m'; NC=$'\e[0m'
 
 STEP=0
-TOTAL_STEPS=13
+TOTAL_STEPS=14
 SCRIPT_START=$(date +%s)
+LIVE_LOG="/var/www/html/api/logs/current.txt"
 
 step()  { STEP=$((STEP+1)); echo; echo "${BOLD}[${STEP}/${TOTAL_STEPS}] $*${NC}"; }
 info()  { echo "  ${DIM}$*${NC}"; }
@@ -241,36 +242,13 @@ done
 echo 'cluster never became healthy'; docker compose ps; exit 1
 " 900
 
-# ─── Step 8: Download dataset ────────────────────────────────────────
-step "Downloading NASA dataset and verifying SHA-256"
-ssm_run "scripts/download_dataset.sh" "cd $PROJECT_DIR && bash scripts/download_dataset.sh" 600
-
-# ─── Step 9: Load to HDFS ────────────────────────────────────────────
-step "Loading dataset into HDFS (replication=2)"
-ssm_run "scripts/load_to_hdfs.sh" "cd $PROJECT_DIR && bash scripts/load_to_hdfs.sh" 600
-
-# ─── Step 10: Run jobs ───────────────────────────────────────────────
-step "Running the 3 MapReduce jobs"
-ssm_run "Job 1 — top_resources" "cd $PROJECT_DIR && bash scripts/run_job.sh top_resources 2>&1 | tee data/output/top_resources.log | tail -5" 600
-ssm_run "Job 2 — status_bytes"  "cd $PROJECT_DIR && bash scripts/run_job.sh status_bytes  2>&1 | tee data/output/status_bytes.log  | tail -5" 600
-ssm_run "Job 3 — hourly_traffic" "cd $PROJECT_DIR && bash scripts/run_job.sh hourly_traffic 2>&1 | tee data/output/hourly_traffic.log | tail -5" 600
-
-# ─── Step 11: Sort outputs ───────────────────────────────────────────
-step "Sorting job outputs into final tables"
-ssm_run "sort -k* per job" "
-cd $PROJECT_DIR
-sort -k2 -n -r data/output/top_resources.raw.txt | head -20 > data/output/top_resources.txt
-sort -k1 -n      data/output/status_bytes.raw.txt          > data/output/status_bytes.txt
-sort -k1 -n      data/output/hourly_traffic.raw.txt        > data/output/hourly_traffic.txt
-wc -l data/output/*.txt
-"
-
-# ─── Step 12: Install Apache + dashboard ─────────────────────────────
-step "Installing Apache and deploying dashboard"
-ssm_run "yum install httpd + reverse proxy" "
+# ─── Step 8: Apache + dashboard skeleton (URL goes live here) ────────
+step "Installing Apache and deploying dashboard skeleton (URL goes live)"
+ssm_run "yum install httpd + reverse proxy + dashboard via symlink" "
 set -euo pipefail
 yum install -y httpd > /dev/null
 systemctl enable --now httpd
+
 cat > /etc/httpd/conf.d/hadoop-proxy.conf <<'EOF'
 Header always set Access-Control-Allow-Origin \"*\"
 ProxyPass /yarn/ http://localhost:8088/
@@ -279,22 +257,84 @@ ProxyPass /hdfs/ http://localhost:9870/
 ProxyPassReverse /hdfs/ http://localhost:9870/
 EOF
 systemctl restart httpd
-echo 'httpd up'
+
+# Generate empty result JSONs so the dashboard renders without 404s.
+mkdir -p $PROJECT_DIR/dashboard/api/results $PROJECT_DIR/data/output
+echo '[]' > $PROJECT_DIR/dashboard/api/results/top_resources.json
+echo '[]' > $PROJECT_DIR/dashboard/api/results/status_bytes.json
+echo '[]' > $PROJECT_DIR/dashboard/api/results/hourly_traffic.json
+
+# Symlink so any update to project files is instantly visible in the dashboard.
+cp $PROJECT_DIR/dashboard/index.html /var/www/html/index.html
+mkdir -p /var/www/html/api/logs
+rm -rf /var/www/html/api/results
+ln -sfn $PROJECT_DIR/dashboard/api/results /var/www/html/api/results
+: > /var/www/html/api/logs/current.txt
+chmod -R a+rx /var/www/html /home/ec2-user $PROJECT_DIR
+echo 'dashboard live'
 " 300
 
-ssm_run "generate JSON + deploy index.html" "
-set -euo pipefail
+echo
+echo "  ${BOLD}${GREEN}► Dashboard now live at http://$PUBLIC_IP${NC}"
+echo "  ${DIM}Subsequent steps stream into the dashboard's Logs panel.${NC}"
+echo
+
+# ─── Step 9: Download dataset ────────────────────────────────────────
+step "Downloading NASA dataset and verifying SHA-256"
+ssm_run "scripts/download_dataset.sh" "
 cd $PROJECT_DIR
-bash scripts/results_to_json.sh
-mkdir -p /var/www/html/api/results /var/www/html/api/logs
-cp dashboard/index.html /var/www/html/index.html
-cp dashboard/api/results/*.json /var/www/html/api/results/
-cat data/output/*.log > /var/www/html/api/logs/current.txt
-echo 'dashboard deployed'
+bash scripts/download_dataset.sh 2>&1 | tee -a $LIVE_LOG
+" 600
+
+# ─── Step 10: Load to HDFS ───────────────────────────────────────────
+step "Loading dataset into HDFS (replication=2)"
+ssm_run "scripts/load_to_hdfs.sh" "
+cd $PROJECT_DIR
+bash scripts/load_to_hdfs.sh 2>&1 | tee -a $LIVE_LOG
+" 600
+
+# ─── Step 11: Run jobs (dashboard reflects each one live) ────────────
+step "Running the 3 MapReduce jobs (watch the dashboard's Jobs panel)"
+ssm_run "Job 1 — top_resources" "
+cd $PROJECT_DIR
+bash scripts/run_job.sh top_resources 2>&1 | tee data/output/top_resources.log | tee -a $LIVE_LOG | tail -5
+bash scripts/results_to_json.sh > /dev/null
+echo '--- top_resources JSON refreshed ---' | tee -a $LIVE_LOG
+" 600
+ssm_run "Job 2 — status_bytes" "
+cd $PROJECT_DIR
+bash scripts/run_job.sh status_bytes 2>&1 | tee data/output/status_bytes.log | tee -a $LIVE_LOG | tail -5
+bash scripts/results_to_json.sh > /dev/null
+echo '--- status_bytes JSON refreshed ---' | tee -a $LIVE_LOG
+" 600
+ssm_run "Job 3 — hourly_traffic" "
+cd $PROJECT_DIR
+bash scripts/run_job.sh hourly_traffic 2>&1 | tee data/output/hourly_traffic.log | tee -a $LIVE_LOG | tail -5
+bash scripts/results_to_json.sh > /dev/null
+echo '--- hourly_traffic JSON refreshed ---' | tee -a $LIVE_LOG
+" 600
+
+# ─── Step 12: Sort outputs ───────────────────────────────────────────
+step "Sorting job outputs into final tables"
+ssm_run "sort -k* per job + refresh dashboard JSONs" "
+cd $PROJECT_DIR
+sort -k2 -n -r data/output/top_resources.raw.txt | head -20 > data/output/top_resources.txt
+sort -k1 -n      data/output/status_bytes.raw.txt          > data/output/status_bytes.txt
+sort -k1 -n      data/output/hourly_traffic.raw.txt        > data/output/hourly_traffic.txt
+bash scripts/results_to_json.sh > /dev/null
+wc -l data/output/*.txt | tee -a $LIVE_LOG
 "
 
-# ─── Step 13: Done ───────────────────────────────────────────────────
-step "Done"
+# ─── Step 13: Final dashboard sync ───────────────────────────────────
+step "Final dashboard sync"
+ssm_run "consolidate logs" "
+cat $PROJECT_DIR/data/output/*.log > $LIVE_LOG
+echo '--- deploy complete ---' >> $LIVE_LOG
+echo 'logs consolidated'
+"
+
+# ─── Step 14: Done ───────────────────────────────────────────────────
+step "All steps complete"
 TOTAL=$(($(date +%s) - SCRIPT_START))
 echo
 echo "${BOLD}${GREEN}Deployment complete in $(fmt_duration $TOTAL).${NC}"
