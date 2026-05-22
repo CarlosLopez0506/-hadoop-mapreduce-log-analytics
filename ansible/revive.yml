@@ -111,7 +111,25 @@
       delay: 10
       changed_when: false
 
-    - name: Reset SSM connection before deploy
+    # The previous task may succeed even when the SSM agent has briefly lost
+    # registration with the AWS SSM service (sessions survive transient drops).
+    # Verify Online status via the AWS API before starting any new SSM sessions.
+    - name: Wait for SSM agent to be Online (via AWS API)
+      ansible.builtin.shell: |
+        aws ssm describe-instance-information \
+          --region {{ ansible_aws_ssm_region }} \
+          --filters "Key=InstanceIds,Values={{ inventory_hostname }}" \
+          --query 'InstanceInformationList[0].PingStatus' \
+          --output text
+      delegate_to: localhost
+      become: false
+      register: ssm_ping
+      until: ssm_ping.stdout == "Online"
+      retries: 60
+      delay: 5
+      changed_when: false
+
+    - name: Reset SSM connection for a fresh session post-bootstrap
       ansible.builtin.meta: reset_connection
 
     - name: Wait for Docker daemon

@@ -11,5 +11,12 @@ mkdir -p /usr/local/lib/docker/cli-plugins
 curl -fsSL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" \
   -o /usr/local/lib/docker/cli-plugins/docker-compose
 chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+# yum update can disturb network drivers and briefly disconnect the SSM agent
+# from the AWS SSM service. Restart the agent and wait for it to re-register
+# so that subsequent meta:reset_connection calls don't fail with TargetNotConnected.
+systemctl restart amazon-ssm-agent
+sleep 30
+
 # signal bootstrap complete
 touch /tmp/bootstrap_done
