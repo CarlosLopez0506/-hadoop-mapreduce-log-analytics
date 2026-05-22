@@ -103,37 +103,21 @@
       ansible.builtin.wait_for_connection:
         timeout: 180
 
+    # Strategy: keep using the single SSM session opened by wait_for_connection.
+    # Starting new sessions (meta:reset_connection, become_user:root) fails for
+    # several minutes after bootstrap because the SSM agent can be in a
+    # post-yum-update reconnect state even when AWS reports PingStatus=Online.
+    # The existing session survives transient agent drops (AWS buffers it).
     - name: Wait for User Data (Docker install) to finish
-      ansible.builtin.shell: test -f /tmp/bootstrap_done
+      ansible.builtin.shell: test -f /tmp/bootstrap_done && echo ready
       register: bootstrap
       until: bootstrap.rc == 0
       retries: 60
       delay: 10
       changed_when: false
 
-    # The previous task may succeed even when the SSM agent has briefly lost
-    # registration with the AWS SSM service (sessions survive transient drops).
-    # Verify Online status via the AWS API before starting any new SSM sessions.
-    - name: Wait for SSM agent to be Online (via AWS API)
-      ansible.builtin.shell: |
-        aws ssm describe-instance-information \
-          --region {{ ansible_aws_ssm_region }} \
-          --filters "Key=InstanceIds,Values={{ inventory_hostname }}" \
-          --query 'InstanceInformationList[0].PingStatus' \
-          --output text
-      delegate_to: localhost
-      become: false
-      register: ssm_ping
-      until: ssm_ping.stdout == "Online"
-      retries: 60
-      delay: 5
-      changed_when: false
-
-    - name: Reset SSM connection for a fresh session post-bootstrap
-      ansible.builtin.meta: reset_connection
-
     - name: Wait for Docker daemon
-      ansible.builtin.shell: sudo docker info > /dev/null 2>&1
+      ansible.builtin.shell: sudo docker info > /dev/null && echo ok
       register: docker_ready
       until: docker_ready.rc == 0
       retries: 30
